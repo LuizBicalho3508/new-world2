@@ -2,31 +2,25 @@
 
 Codename de um action RPG 3D procedural em terceira pessoa, PvPvE, construido em Unreal Engine 5.8.
 
-> `New World 2` e um codename de desenvolvimento. O projeto nao reutiliza codigo, assets, historia, personagens, marcas ou conteudo de New World, Throne and Liberty ou qualquer outro jogo. Referencias servem apenas para direcao de genero/gameplay. Antes de publicacao comercial, o produto deve receber nome e identidade proprios.
+> `New World 2` e um codename de desenvolvimento. O projeto nao reutiliza codigo, historia, personagens, marcas ou identidade de New World, Throne and Liberty ou qualquer outro jogo. Referencias servem apenas para direcao de genero/gameplay. Antes de publicacao comercial, o produto deve receber nome e identidade proprios.
 
-## Objetivo
-
-Construir um action RPG PvPvE com combate por armas, troca de loadout, itens procedurais e um mundo que se transforma ao longo do tempo, mantendo uma base tecnicamente viavel para hardware desde GTX 1650 ate GPUs modernas.
-
-Principios atuais:
+## Direcao do projeto
 
 - sem level tradicional de personagem;
-- progressao horizontal por equipamento, sinergias e dominio do loadout;
-- 2 armas equipadas simultaneamente;
-- 3 habilidades diferentes para cada familia de arma;
-- 2 habilidades ofensivas + 1 habilidade de cura por arma;
-- combo entre as duas armas quando habilidades sao encadeadas dentro da janela de combo;
-- equipamentos com raridade e afixos procedurais;
-- efeitos condicionais de equipamento capazes de modificar o combate;
-- PvE e PvP previstos desde o nucleo;
-- terreno, recursos, inimigos, assentamentos e populacao derivados de seed/epoch;
-- invasoes de mobs contra cidades/NPCs;
-- servidor autoritativo para gameplay;
-- escalabilidade grafica e uso de instancing desde o prototipo.
+- progressao horizontal por equipamento, afixos, sinergias e dominio mecanico;
+- duas armas equipadas simultaneamente;
+- sete familias de arma, cada uma com ataque basico e tres habilidades;
+- duas habilidades ofensivas + uma cura por arma;
+- combo entre armas por troca de loadout;
+- PvE e PvP com servidor autoritativo;
+- loot, atributos e propriedades gerados proceduralmente por seed;
+- cidades, civis, criaturas e invasoes;
+- mundo por epochs;
+- World Partition + PCG runtime particionado preparados para streaming por celulas;
+- direcao visual realista com conteudo gratuito licenciado instalado localmente;
+- fallback completo sem assets de terceiros para o repositorio continuar clonavel e compilavel.
 
-## Vertical slice atual
-
-### Combate
+## Combate atual
 
 Familias implementadas:
 
@@ -38,33 +32,49 @@ Familias implementadas:
 6. Arco;
 7. Arma de Fogo.
 
-Cada arma possui:
+Cada arma possui ataque basico, `Q` e `E` ofensivos e `C` de cura. O cooldown base continua proximo de 3 segundos. `F` troca rapidamente entre as duas armas e uma habilidade conectada pela segunda arma dentro da janela de 2,5 segundos recebe o bonus de combo do prototipo.
 
-- ataque basico proprio;
-- habilidade ofensiva 1 (`Q`);
-- habilidade ofensiva 2 (`E`);
-- habilidade de cura (`C`);
-- cooldown base proximo de 3 segundos;
-- alcance/raio/potencia especificos;
-- compatibilidade propria com efeitos especiais.
+### Defesa ativa
 
-O personagem inicia com Espada Grande + Cajado. Para o prototipo, `Z` percorre as armas no slot 1 e `X` percorre as armas no slot 2, permitindo testar todas as familias antes de existir uma tela de inventario completa.
+O personagem agora possui:
 
-### Combo entre armas
+- stamina;
+- block com botao direito;
+- janela curta de parry ao levantar a guarda;
+- parry perfeito que anula dano e causa stagger no atacante;
+- guard break quando a stamina acaba;
+- dodge com `Alt esquerdo`;
+- i-frames durante a parte inicial do dodge;
+- stagger por ataques fortes/parry;
+- hit reaction e montages de combate quando um pacote de animacao compativel esta instalado.
 
-Usar uma habilidade de uma arma, trocar para a outra e conectar outra habilidade dentro da janela de 2,5 segundos ativa multiplicador de combo. O prototipo usa +18% de dano no segundo golpe da sequencia.
+## HUD
 
-### Equipamentos e drops procedurais
+O HUD e criado em C++/UMG e nao depende de Blueprint para aparecer. Ele mostra:
 
-Mobs derrotados geram itens com:
+- vida atual/maxima;
+- stamina;
+- armas nos slots 1 e 2;
+- arma ativa;
+- estado de combate (normal, bloqueando, janela de parry, dodge ou stagger);
+- nomes das tres habilidades da arma atual;
+- cooldown individual em tempo real;
+- prompt de loot proximo;
+- inventario/equipamentos.
 
-- seed propria;
-- slot de equipamento;
-- raridade;
-- de 1 a 3 afixos;
-- magnitudes procedurais.
+## Inventario e loot visual
 
-Afixos iniciais:
+Mobs nao autoequipam mais itens no jogador. Agora o fluxo e:
+
+`mob morre -> item procedural aparece no mundo -> G coleta -> mochila -> I abre inventario -> setas selecionam -> Enter equipa`.
+
+O pickup e replicado, flutua no mundo, possui nome e luz/cor de raridade e desaparece apos o tempo limite se nao for coletado.
+
+## Itens e afixos
+
+Os itens usam seed, item level, slot, raridade, magnitudes procedurais e ate quatro afixos em raridades mais altas.
+
+Afixos implementados:
 
 - Poder;
 - Vitalidade;
@@ -72,81 +82,62 @@ Afixos iniciais:
 - Aceleracao;
 - Cura;
 - Revestimento Venenoso;
-- Roubo de Vida.
+- Roubo de Vida;
+- Armadura;
+- Marca de Fogo;
+- Mordida Gelida;
+- Corrente Eletrica;
+- Eco de Habilidade;
+- Ritmo Critico;
+- Guarda Fortificada;
+- Parry Restaurador;
+- Impulso da Esquiva;
+- Sangramento;
+- Executor.
 
-O prototipo autoequipa um drop apenas quando sua pontuacao supera o item atual do mesmo slot. Inventario, pickup visual, comparador e descarte entram na proxima etapa.
+Eles nao sao apenas numeros: varios modificam a mecanica. Exemplos atuais incluem veneno/sangramento/fire DoT, slow de gelo, dano que salta para outro alvo, eco de habilidade, reducao de cooldown em critico, bloqueio mais eficiente, cura ao executar parry, bonus apos dodge e dano extra contra alvos com pouca vida.
 
-### Exemplo de sinergia: luvas venenosas
+## Mundo vivo
 
-O personagem inicia com `Luvas do Alquimista - Prototipo`, contendo `Revestimento Venenoso`.
+A geracao atual inclui terreno, vegetacao, rochas, recursos, dois assentamentos, civis, mobs ambientais e invasoes recorrentes. O epoch continua alterando deterministicamente o estado do mundo.
 
-Quando a arma ativa e compativel, ataques e habilidades aplicam dano adicional por veneno durante 3 ticks. Compatibilidade inicial:
+O `ANWProceduralWorldManager` agora possui tambem um `UPCGComponent` configurado para `GenerateAtRuntime` e particionamento. Quando um grafo PCG local e atribuido, ele e gerado com seed derivada do epoch. Sem grafo, o gerador C++ atual permanece como fallback.
 
-- Espada Grande;
-- Duas Espadas;
-- Espada e Escudo;
-- Adagas;
-- Arco.
+## World Partition
 
-Cajado e arma de fogo nao recebem esse efeito, deixando a regra preparada para sinergias especificas de build em vez de bonus universais.
+`scripts/prepare-worldpartition.ps1` cria localmente o mapa `/Game/GeneratedWorld/NW2_OpenWorld` e executa o `WorldPartitionConvertCommandlet`. O mapa gerado e seus External Actors ficam fora do Git porque sao artefatos locais/binarios.
 
-### Mundo vivo
+O bootstrap principal chama esse preparador automaticamente. Se a conversao falhar, o teste abre o mapa fallback em vez de impedir a validacao dos outros sistemas.
 
-O mundo atual gera por seed/epoch:
+## Conteudo realista gratuito
 
-- terreno procedural;
-- 260 arvores;
-- 190 arbustos;
-- 110 rochas;
-- 40 recursos/cristais;
-- 26 mobs ambientais;
-- 2 assentamentos;
-- casas, muralhas e torres instanciadas;
-- 8 civis por assentamento.
+O codigo tenta detectar automaticamente conteudo gratuito instalado localmente, por exemplo:
 
-A cada epoch o layout e regenerado deterministicamente para servidor/clientes.
+- Paragon Greystone para o personagem de teste e animacoes;
+- Paragon Sparrow para civis;
+- Paragon Grux para criaturas;
+- Open World Demo Collection / Megascans / Megascans Trees para foliage e rochas;
+- packs gratuitos de construcoes medievais compativeis para assentamentos.
 
-### Invasoes
+Esses arquivos nao sao redistribuidos no repositorio. Veja `docs/REALISTIC_ASSETS.md`.
 
-- primeira onda: ~20 segundos apos iniciar;
-- recorrencia: ~55 segundos;
-- 10 invasores por assentamento;
-- inimigos priorizam jogador dentro do raio de aggro;
-- fora disso continuam atacando civis e o nucleo da cidade;
-- se o nucleo for rompido, ele e restaurado no prototipo para o teste continuar.
-
-## Visual
-
-A arquitetura esta sendo preparada para uma direcao realista, com:
-
-- vegetacao densa;
-- cidades e estruturas;
-- NPCs e populacao;
-- criaturas em grande quantidade;
-- materiais/iluminacao escalaveis;
-- LOD/HISM/streaming como requisitos de performance.
-
-A arte do vertical slice ainda usa primitivas internas da Unreal propositalmente. O passo seguinte e substituir os placeholders por assets gratuitos licenciados, personagens animados, foliage realista, materiais de terreno e VFX sem comprometer a meta de hardware.
-
-## Requisitos Windows
-
-- Windows 10/11 64-bit;
-- Unreal Engine 5.8 instalada pelo Epic Games Launcher;
-- Visual Studio com toolchain C++ compativel;
-- Git;
-- GPU DirectX 12 recomendada.
-
-## Executar
+## Executar no Windows
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass -Force
 & .\scripts\clone-build-run.ps1
 ```
 
-Para informar a UE 5.8 manualmente:
+Para informar manualmente a UE 5.8:
 
 ```powershell
 & .\scripts\clone-build-run.ps1 -UERoot "D:\Epic Games\UE_5.8"
+```
+
+Para testar sem preparar World Partition:
+
+```powershell
+& .\scripts\clone-build-run.ps1 -SkipWorldPartition
 ```
 
 ## Controles
@@ -157,16 +148,20 @@ Para informar a UE 5.8 manualmente:
 | Mouse | camera |
 | Espaco | pular |
 | Shift | correr |
-| Mouse esquerdo | ataque basico da arma atual |
+| Mouse esquerdo | ataque basico |
+| Mouse direito | bloquear / abrir janela de parry |
+| Alt esquerdo | dodge |
 | Q | habilidade ofensiva 1 |
 | E | habilidade ofensiva 2 |
 | C | habilidade de cura |
-| 1 | selecionar arma do slot 1 |
-| 2 | selecionar arma do slot 2 |
-| F | alternar rapidamente entre as duas armas |
-| Z | trocar a familia da arma do slot 1 (debug) |
-| X | trocar a familia da arma do slot 2 (debug) |
-| R | gerar um novo epoch imediatamente |
+| 1 / 2 | selecionar armas |
+| F | troca rapida / combo cross-weapon |
+| Z / X | trocar familia das armas (debug) |
+| G | coletar loot proximo |
+| I | abrir/fechar inventario |
+| Seta cima/baixo | selecionar item |
+| Enter | equipar item selecionado |
+| R | gerar novo epoch imediatamente |
 
 ## Arquitetura relevante
 
@@ -174,25 +169,25 @@ Para informar a UE 5.8 manualmente:
 Source/NewWorld2/
 ├─ NWCombatTypes.h
 ├─ NWCombatLibrary.cpp/.h
+├─ NWCombatHUDWidget.cpp/.h
+├─ NWLootPickup.cpp/.h
 ├─ NWCharacter.cpp/.h
 ├─ NWEnemy.cpp/.h
 ├─ NWCivilian.cpp/.h
 ├─ NWSettlementCore.cpp/.h
 ├─ NWProceduralWorldManager.cpp/.h
+├─ PCGGraphInterface.h
 └─ NWGameMode.cpp/.h
+
+scripts/
+├─ clone-build-run.ps1
+└─ prepare-worldpartition.ps1
 ```
 
-## Proximas etapas
+## Proximas prioridades
 
-1. HUD de habilidades/cooldowns/vida/arma ativa;
-2. animacoes reais, dodge, block, parry, stagger e hit reactions;
-3. inventario e loot visual no mundo;
-4. mais afixos e efeitos que alterem habilidades;
-5. personagens, foliage, construcoes e criaturas realistas usando conteudo gratuito licenciado;
-6. streaming/World Partition/PCG por celulas;
-7. perfis graficos e profiling em GTX 1650;
-8. multiplayer dedicado e persistencia.
+Depois da primeira compilacao/teste integrado: profiling real em GTX 1650 e RTX 5060, ajuste fino do feeling de combate, animacoes especificas por familia de arma, grafo PCG autorado no Editor, HLOD do World Partition, multiplayer dedicado e persistencia.
 
 ## Licenca
 
-O codigo proprio deste repositorio segue a licenca presente em `LICENSE`. Assets de terceiros mantem suas respectivas licencas e nao passam automaticamente a ser MIT por estarem usados no projeto.
+O codigo proprio deste repositorio segue a licenca presente em `LICENSE`. Assets de terceiros mantem suas respectivas licencas. Conteudo instalado via Fab/Epic nao passa a ser MIT e nao deve ser republicado isoladamente pelo repositorio.
