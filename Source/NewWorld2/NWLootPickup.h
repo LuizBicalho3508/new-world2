@@ -26,7 +26,7 @@ public:
     bool TryPickup(ANWCharacter* Character);
 
     UFUNCTION(BlueprintPure, Category="Loot")
-    const FNWGeneratedItem& GetItem() const { return Item; }
+    FNWGeneratedItem GetItem() const { return Item; }
 
 protected:
     virtual void BeginPlay() override;
@@ -51,6 +51,5 @@ protected:
 
 private:
     void RefreshVisuals();
-    float BaseZ = 0.0f;
     float LifeSeconds = 0.0f;
 };
