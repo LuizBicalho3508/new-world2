@@ -62,12 +62,12 @@ void UNWCombatHUDWidget::BuildHUD()
     UCanvasPanelSlot* VitalsSlot = Root->AddChildToCanvas(VitalsBorder);
     VitalsSlot->SetAnchors(FAnchors(0.0f, 0.0f));
     VitalsSlot->SetPosition(FVector2D(28.0f, 28.0f));
-    VitalsSlot->SetSize(FVector2D(380.0f, 176.0f));
+    VitalsSlot->SetSize(FVector2D(580.0f, 305.0f));
 
     UVerticalBox* VitalsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
     VitalsBorder->SetContent(VitalsBox);
 
-    WeaponText = MakeText(TEXT("ARMA"), 21);
+    WeaponText = MakeText(TEXT("ARMA"), 18);
     VitalsBox->AddChildToVerticalBox(WeaponText);
 
     HealthText = MakeText(TEXT("Vida"), 15);
@@ -122,7 +122,7 @@ void UNWCombatHUDWidget::BuildHUD()
     LootSlot->SetAnchors(FAnchors(0.5f, 1.0f));
     LootSlot->SetAlignment(FVector2D(0.5f, 1.0f));
     LootSlot->SetPosition(FVector2D(0.0f, -152.0f));
-    LootSlot->SetSize(FVector2D(760.0f, 42.0f));
+    LootSlot->SetSize(FVector2D(980.0f, 54.0f));
 
     InventoryPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InventoryPanel"));
     InventoryPanel->SetPadding(FMargin(22.0f));
@@ -131,9 +131,9 @@ void UNWCombatHUDWidget::BuildHUD()
     UCanvasPanelSlot* InventorySlot = Root->AddChildToCanvas(InventoryPanel);
     InventorySlot->SetAnchors(FAnchors(0.5f, 0.5f));
     InventorySlot->SetAlignment(FVector2D(0.5f, 0.5f));
-    InventorySlot->SetSize(FVector2D(720.0f, 560.0f));
+    InventorySlot->SetSize(FVector2D(900.0f, 700.0f));
 
-    InventoryText = MakeText(TEXT("INVENTARIO"), 16);
+    InventoryText = MakeText(TEXT("BAG"), 14);
     InventoryPanel->SetContent(InventoryText);
 }
 
@@ -148,8 +148,36 @@ void UNWCombatHUDWidget::RefreshHUD()
     StaminaBar->SetPercent(Character->GetStamina() / MaxStamina);
     HealthText->SetText(FText::FromString(FString::Printf(TEXT("VIDA  %.0f / %.0f"), Character->GetHealth(), MaxHealth)));
     StaminaText->SetText(FText::FromString(FString::Printf(TEXT("STAMINA  %.0f / %.0f"), Character->GetStamina(), MaxStamina)));
-    WeaponText->SetText(FText::FromString(FString::Printf(TEXT("[1] %s   |   [2] %s\nATIVA: %s"), *NWCombat::WeaponTypeToString(Character->GetPrimaryWeapon()), *NWCombat::WeaponTypeToString(Character->GetSecondaryWeapon()), *Character->GetActiveWeaponName())));
-    StateText->SetText(FText::FromString(Character->GetCombatStateLabel()));
+
+    const FNWWeaponDefinition Primary = NWCombat::GetWeaponDefinition(Character->GetPrimaryWeapon());
+    const FNWWeaponDefinition Secondary = NWCombat::GetWeaponDefinition(Character->GetSecondaryWeapon());
+    FString WeaponInfo = FString::Printf(TEXT("[1] %s   |   [2] %s\nATIVA: %s"), *Primary.Name, *Secondary.Name, *Character->GetActiveWeaponName());
+    if (Character->GetActiveWeapon() == ENWWeaponType::Bow)
+    {
+        WeaponInfo += FString::Printf(TEXT("   |   [V] FLECHA: %s"), *Character->GetArrowElementLabel());
+    }
+
+    WeaponInfo += TEXT("\nPASSIVAS SLOT 1: ");
+    for (int32 Index = 0; Index < Primary.Passives.Num(); ++Index)
+    {
+        if (Index > 0) { WeaponInfo += TEXT(" | "); }
+        WeaponInfo += Primary.Passives[Index].Name;
+    }
+    WeaponInfo += TEXT("\nPASSIVAS SLOT 2: ");
+    for (int32 Index = 0; Index < Secondary.Passives.Num(); ++Index)
+    {
+        if (Index > 0) { WeaponInfo += TEXT(" | "); }
+        WeaponInfo += Secondary.Passives[Index].Name;
+    }
+    WeaponText->SetText(FText::FromString(WeaponInfo));
+
+    FString State = Character->GetCombatStateLabel();
+    if (Character->IsBrutalTransformationActive())
+    {
+        State += FString::Printf(TEXT(" | METAMORFOSE %.0fs"), Character->GetBrutalTransformationRemaining());
+    }
+    State += FString::Printf(TEXT("\n[T] Destino: %s   [Y] TELEPORTAR"), *Character->GetSelectedFastTravelLabel());
+    StateText->SetText(FText::FromString(State));
 
     const FNWWeaponDefinition Weapon = NWCombat::GetWeaponDefinition(Character->GetActiveWeapon());
     const TCHAR* Keys[3] = { TEXT("Q"), TEXT("E"), TEXT("C") };
@@ -182,25 +210,56 @@ void UNWCombatHUDWidget::RefreshInventory()
     ANWCharacter* Character = ObservedCharacter.Get();
     if (!Character || !InventoryText) { return; }
 
-    FString Text = TEXT("INVENTARIO  [I fechar]   [Setas selecionar]   [Enter equipar]\n\nEQUIPADO\n");
+    FString Text = TEXT("BAG SEM LIMITE  [I fechar]   [Setas selecionar]   [Enter equipar/usar]\n");
+    Text += FString::Printf(TEXT("TOTAL: %d itens\n\nARMADURAS EQUIPADAS\n"), Character->GetInventoryItems().Num());
     for (const FNWGeneratedItem& Item : Character->GetEquippedItems())
     {
         Text += FString::Printf(TEXT("  %s | %s | score %.1f\n"), *NWCombat::EquipmentSlotToString(Item.Slot), *Item.Name, NWCombat::GetItemScore(Item));
     }
 
-    Text += TEXT("\nMOCHILA\n");
+    Text += TEXT("\nARMAS EQUIPADAS\n");
+    for (const FNWGeneratedItem& Item : Character->GetEquippedWeaponItems())
+    {
+        if (!Item.Name.IsEmpty())
+        {
+            Text += FString::Printf(TEXT("  %s | %s | score %.1f\n"), *NWCombat::WeaponTypeToString(Item.WeaponType), *Item.Name, NWCombat::GetItemScore(Item));
+        }
+    }
+
+    Text += TEXT("\nCONTEUDO DA BAG - ORGANIZADO AUTOMATICAMENTE\n");
     const TArray<FNWGeneratedItem> Inventory = Character->GetInventoryItems();
     const int32 Selected = Character->GetSelectedInventoryIndex();
     if (Inventory.IsEmpty())
     {
-        Text += TEXT("  (vazia - derrote inimigos e colete os drops)\n");
+        Text += TEXT("  (vazia - derrote inimigos, bosses e colete drops)\n");
     }
     else
     {
+        FString LastCategory;
         for (int32 Index = 0; Index < Inventory.Num(); ++Index)
         {
             const FNWGeneratedItem& Item = Inventory[Index];
-            Text += FString::Printf(TEXT("%s %02d. %s | %s | score %.1f\n"), Index == Selected ? TEXT(">") : TEXT(" "), Index + 1, *Item.Name, *NWCombat::EquipmentSlotToString(Item.Slot), NWCombat::GetItemScore(Item));
+            FString Category;
+            if (Item.Kind == ENWItemKind::Weapon)
+            {
+                Category = FString::Printf(TEXT("ARMAS > %s"), *NWCombat::WeaponTypeToString(Item.WeaponType));
+            }
+            else if (Item.Kind == ENWItemKind::Armor)
+            {
+                Category = FString::Printf(TEXT("ARMADURAS > %s > %s"), *NWCombat::ArmorWeightToString(Item.ArmorWeight), *NWCombat::EquipmentSlotToString(Item.Slot));
+            }
+            else
+            {
+                Category = TEXT("CONSUMIVEIS LENDARIOS");
+            }
+
+            if (Category != LastCategory)
+            {
+                Text += FString::Printf(TEXT("\n=== %s ===\n"), *Category);
+                LastCategory = Category;
+            }
+
+            Text += FString::Printf(TEXT("%s %03d. %s | score %.1f\n"), Index == Selected ? TEXT(">") : TEXT(" "), Index + 1, *Item.Name, NWCombat::GetItemScore(Item));
             for (const FNWItemAffix& Affix : Item.Affixes)
             {
                 Text += FString::Printf(TEXT("       + %s %.1f\n"), *NWCombat::AffixToString(Affix.Type), Affix.Magnitude);
