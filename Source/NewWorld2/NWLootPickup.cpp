@@ -29,10 +29,7 @@ ANWLootPickup::ANWLootPickup()
     LootMesh->SetRelativeScale3D(FVector(0.28f));
 
     static ConstructorHelpers::FObjectFinder<UStaticMesh> MeshAsset(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
-    if (MeshAsset.Succeeded())
-    {
-        LootMesh->SetStaticMesh(MeshAsset.Object);
-    }
+    if (MeshAsset.Succeeded()) { LootMesh->SetStaticMesh(MeshAsset.Object); }
 
     RarityLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("RarityLight"));
     RarityLight->SetupAttachment(InteractionSphere);
@@ -54,7 +51,6 @@ ANWLootPickup::ANWLootPickup()
 void ANWLootPickup::BeginPlay()
 {
     Super::BeginPlay();
-    BaseZ = GetActorLocation().Z;
     RefreshVisuals();
 }
 
@@ -62,15 +58,6 @@ void ANWLootPickup::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
     LifeSeconds += DeltaSeconds;
-
-    if (!HasAuthority())
-    {
-        const float FloatOffset = FMath::Sin(LifeSeconds * 2.0f) * 9.0f;
-        LootMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 42.0f + FloatOffset));
-        LootMesh->AddLocalRotation(FRotator(0.0f, DeltaSeconds * 42.0f, 0.0f));
-        return;
-    }
-
     const float FloatOffset = FMath::Sin(LifeSeconds * 2.0f) * 9.0f;
     LootMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 42.0f + FloatOffset));
     LootMesh->AddLocalRotation(FRotator(0.0f, DeltaSeconds * 42.0f, 0.0f));
@@ -88,15 +75,11 @@ bool ANWLootPickup::TryPickup(ANWCharacter* Character)
 {
     if (!HasAuthority() || !Character) { return false; }
     if (!Character->TryAddInventoryItem(Item)) { return false; }
-
     Destroy();
     return true;
 }
 
-void ANWLootPickup::OnRep_Item()
-{
-    RefreshVisuals();
-}
+void ANWLootPickup::OnRep_Item() { RefreshVisuals(); }
 
 void ANWLootPickup::RefreshVisuals()
 {
