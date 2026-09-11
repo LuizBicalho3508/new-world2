@@ -108,7 +108,7 @@ void UNWCombatHUDWidget::BuildHUD()
         Card->SetBrushColor(FLinearColor(0.06f, 0.075f, 0.09f, 0.96f));
         UHorizontalBoxSlot* CardSlot = AbilityRow->AddChildToHorizontalBox(Card);
         CardSlot->SetPadding(FMargin(5.0f));
-        CardSlot->SetSize(FSlateChildSize(1.0f, ESlateSizeRule::Fill));
+        CardSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
 
         UTextBlock* Text = MakeText(FString::Printf(TEXT("[%s] Habilidade"), Keys[Index]), 15);
         Text->SetJustification(ETextJustify::Center);
