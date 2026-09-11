@@ -30,7 +30,7 @@ public:
     FString GetActiveWeaponName() const;
 
     UFUNCTION(BlueprintPure, Category="Equipment")
-    const TArray<FNWGeneratedItem>& GetEquippedItems() const { return EquippedItems; }
+    TArray<FNWGeneratedItem> GetEquippedItems() const { return EquippedItems; }
 
 protected:
     virtual void BeginPlay() override;
