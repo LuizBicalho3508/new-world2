@@ -1,5 +1,7 @@
 #include "NWProceduralWorldManager.h"
 
+#include "AssetRegistry/AssetData.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
@@ -9,10 +11,13 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "Modules/ModuleManager.h"
 #include "Net/UnrealNetwork.h"
 #include "NWCivilian.h"
 #include "NWEnemy.h"
 #include "NWSettlementCore.h"
+#include "PCGComponent.h"
+#include "PCGGraphInterface.h"
 #include "ProceduralMeshComponent.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
@@ -53,9 +58,16 @@ ANWProceduralWorldManager::ANWProceduralWorldManager()
     Crystals->SetCollisionResponseToAllChannels(ECR_Ignore);
     Crystals->SetCollisionResponseToChannel(ECC_Pawn, ECR_Overlap);
 
+    Buildings = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("Buildings"));
+    Buildings->SetupAttachment(SceneRoot);
+    Buildings->SetCollisionProfileName(TEXT("BlockAll"));
+
     Structures = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("Structures"));
     Structures->SetupAttachment(SceneRoot);
     Structures->SetCollisionProfileName(TEXT("BlockAll"));
+
+    RuntimePCG = CreateDefaultSubobject<UPCGComponent>(TEXT("RuntimePCG"));
+    RuntimePCG->GenerationTrigger = EPCGComponentGenerationTrigger::GenerateAtRuntime;
 
     SunLight = CreateDefaultSubobject<UDirectionalLightComponent>(TEXT("SunLight"));
     SunLight->SetupAttachment(SceneRoot);
@@ -82,12 +94,19 @@ ANWProceduralWorldManager::ANWProceduralWorldManager()
     if (CylinderMesh.Succeeded()) { TreeTrunks->SetStaticMesh(CylinderMesh.Object); }
     if (ConeMesh.Succeeded()) { TreeCrowns->SetStaticMesh(ConeMesh.Object); }
     if (SphereMesh.Succeeded()) { Bushes->SetStaticMesh(SphereMesh.Object); Crystals->SetStaticMesh(SphereMesh.Object); }
-    if (CubeMesh.Succeeded()) { Rocks->SetStaticMesh(CubeMesh.Object); Structures->SetStaticMesh(CubeMesh.Object); }
+    if (CubeMesh.Succeeded()) { Rocks->SetStaticMesh(CubeMesh.Object); Buildings->SetStaticMesh(CubeMesh.Object); Structures->SetStaticMesh(CubeMesh.Object); }
 }
 
 void ANWProceduralWorldManager::BeginPlay()
 {
     Super::BeginPlay();
+
+    if (bAutoDiscoverInstalledFreeAssets)
+    {
+        TryApplyInstalledFreeWorldAssets();
+    }
+
+    ConfigureRuntimePCG();
     BuildWorld();
 
     if (HasAuthority())
@@ -104,6 +123,104 @@ void ANWProceduralWorldManager::BeginPlay()
     }
 }
 
+void ANWProceduralWorldManager::ConfigureRuntimePCG()
+{
+    if (!RuntimePCG) { return; }
+
+    RuntimePCG->SetIsPartitioned(bEnableRuntimePartitionedPCG);
+    RuntimePCG->GenerationTrigger = EPCGComponentGenerationTrigger::GenerateAtRuntime;
+    RuntimePCG->Seed = GetWorldSeed();
+
+    UPCGGraphInterface* Graph = RuntimePCGGraph.LoadSynchronous();
+    if (Graph)
+    {
+        RuntimePCG->SetGraphLocal(Graph);
+        RuntimePCG->GenerateLocal(true);
+        UE_LOG(LogTemp, Display, TEXT("[PCG] grafo runtime ativo, particionado=%s, seed=%d"), bEnableRuntimePartitionedPCG ? TEXT("sim") : TEXT("nao"), GetWorldSeed());
+    }
+    else
+    {
+        UE_LOG(LogTemp, Display, TEXT("[PCG] componente runtime particionado preparado; sem grafo local, usando gerador C++ como fallback."));
+    }
+}
+
+void ANWProceduralWorldManager::TryApplyInstalledFreeWorldAssets()
+{
+    const TArray<FName> NatureRoots = {
+        FName(TEXT("/Game/KiteDemo")),
+        FName(TEXT("/Game/Megascans")),
+        FName(TEXT("/Game/Quixel")),
+        FName(TEXT("/Game/EuropeanBeech")),
+        FName(TEXT("/Game/EuropeanHornbeam"))
+    };
+
+    if (UStaticMesh* Tree = FindInstalledStaticMesh(NatureRoots, { TEXT("Tree"), TEXT("Beech"), TEXT("Hornbeam"), TEXT("Oak"), TEXT("Pine") }))
+    {
+        TreeTrunks->SetStaticMesh(Tree);
+        TreeCrowns->SetVisibility(false, true);
+        bUsingRealisticTreeMesh = true;
+        UE_LOG(LogTemp, Display, TEXT("[VISUAL] arvore gratuita instalada detectada: %s"), *Tree->GetPathName());
+    }
+
+    if (UStaticMesh* Bush = FindInstalledStaticMesh(NatureRoots, { TEXT("Bush"), TEXT("Shrub"), TEXT("Fern"), TEXT("GroundPlant") }))
+    {
+        Bushes->SetStaticMesh(Bush);
+        UE_LOG(LogTemp, Display, TEXT("[VISUAL] foliage baixo detectado: %s"), *Bush->GetPathName());
+    }
+
+    if (UStaticMesh* Rock = FindInstalledStaticMesh(NatureRoots, { TEXT("Rock"), TEXT("Boulder"), TEXT("Cliff") }))
+    {
+        Rocks->SetStaticMesh(Rock);
+        UE_LOG(LogTemp, Display, TEXT("[VISUAL] rocha realista detectada: %s"), *Rock->GetPathName());
+    }
+
+    const TArray<FName> BuildingRoots = {
+        FName(TEXT("/Game/ElderBoom")),
+        FName(TEXT("/Game/MedievalVillage")),
+        FName(TEXT("/Game/Medieval")),
+        FName(TEXT("/Game/Village"))
+    };
+
+    if (UStaticMesh* Building = FindInstalledStaticMesh(BuildingRoots, { TEXT("House"), TEXT("Building"), TEXT("Cottage"), TEXT("Hut") }))
+    {
+        Buildings->SetStaticMesh(Building);
+        bUsingRealisticBuildingMesh = true;
+        UE_LOG(LogTemp, Display, TEXT("[VISUAL] construcao realista detectada: %s"), *Building->GetPathName());
+    }
+}
+
+UStaticMesh* ANWProceduralWorldManager::FindInstalledStaticMesh(const TArray<FName>& Roots, const TArray<FString>& Keywords) const
+{
+    IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+
+    for (const FName& Root : Roots)
+    {
+        FARFilter Filter;
+        Filter.PackagePaths.Add(Root);
+        Filter.ClassPaths.Add(UStaticMesh::StaticClass()->GetClassPathName());
+        Filter.bRecursivePaths = true;
+
+        TArray<FAssetData> Assets;
+        Registry.GetAssets(Filter, Assets);
+        for (const FAssetData& Asset : Assets)
+        {
+            const FString Name = Asset.AssetName.ToString();
+            for (const FString& Keyword : Keywords)
+            {
+                if (Name.Contains(Keyword, ESearchCase::IgnoreCase))
+                {
+                    if (UStaticMesh* Mesh = Cast<UStaticMesh>(Asset.GetAsset()))
+                    {
+                        return Mesh;
+                    }
+                }
+            }
+        }
+    }
+
+    return nullptr;
+}
+
 void ANWProceduralWorldManager::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -116,6 +233,11 @@ void ANWProceduralWorldManager::AdvanceEpoch()
 
     ClearSpawnedActors();
     ++WorldEpoch;
+    if (RuntimePCG)
+    {
+        RuntimePCG->Seed = GetWorldSeed();
+        if (RuntimePCG->GetGraph()) { RuntimePCG->GenerateLocal(true); }
+    }
     BuildWorld();
     RelocatePlayersAfterEpoch();
     UE_LOG(LogTemp, Display, TEXT("[WORLD] Novo epoch %d. Terreno, vegetacao, recursos, cidades e populacao foram regenerados."), WorldEpoch);
@@ -128,6 +250,11 @@ float ANWProceduralWorldManager::GetTerrainHeightAt(float X, float Y) const
 
 void ANWProceduralWorldManager::OnRep_WorldEpoch()
 {
+    if (RuntimePCG)
+    {
+        RuntimePCG->Seed = GetWorldSeed();
+        if (RuntimePCG->GetGraph()) { RuntimePCG->GenerateLocal(true); }
+    }
     BuildTerrain();
     BuildDecorations();
 }
@@ -212,6 +339,7 @@ void ANWProceduralWorldManager::BuildDecorations()
     Bushes->ClearInstances();
     Rocks->ClearInstances();
     Crystals->ClearInstances();
+    Buildings->ClearInstances();
     Structures->ClearInstances();
 
     const float HalfWorld = TerrainResolution * TerrainCellSize * 0.5f - 600.0f;
@@ -224,8 +352,15 @@ void ANWProceduralWorldManager::BuildDecorations()
         const float UniformScale = Random.FRandRange(0.65f, 1.45f);
         const float Yaw = Random.FRandRange(0.0f, 360.0f);
 
-        TreeTrunks->AddInstance(FTransform(FRotator(0.0f, Yaw, 0.0f), FVector(Point.X, Point.Y, GroundZ + 150.0f * UniformScale), FVector(0.30f * UniformScale, 0.30f * UniformScale, 3.0f * UniformScale)));
-        TreeCrowns->AddInstance(FTransform(FRotator(0.0f, Yaw, 0.0f), FVector(Point.X, Point.Y, GroundZ + 430.0f * UniformScale), FVector(1.55f * UniformScale, 1.55f * UniformScale, 2.25f * UniformScale)));
+        if (bUsingRealisticTreeMesh)
+        {
+            TreeTrunks->AddInstance(FTransform(FRotator(0.0f, Yaw, 0.0f), FVector(Point.X, Point.Y, GroundZ), FVector(UniformScale)));
+        }
+        else
+        {
+            TreeTrunks->AddInstance(FTransform(FRotator(0.0f, Yaw, 0.0f), FVector(Point.X, Point.Y, GroundZ + 150.0f * UniformScale), FVector(0.30f * UniformScale, 0.30f * UniformScale, 3.0f * UniformScale)));
+            TreeCrowns->AddInstance(FTransform(FRotator(0.0f, Yaw, 0.0f), FVector(Point.X, Point.Y, GroundZ + 430.0f * UniformScale), FVector(1.55f * UniformScale, 1.55f * UniformScale, 2.25f * UniformScale)));
+        }
     }
 
     for (int32 Index = 0; Index < BushCount; ++Index)
@@ -233,7 +368,7 @@ void ANWProceduralWorldManager::BuildDecorations()
         const FVector2D Point = RandomGroundPoint(Random, HalfWorld, 650.0f);
         const float GroundZ = SampleHeight(Point.X, Point.Y);
         const FVector Scale(Random.FRandRange(0.35f, 0.85f), Random.FRandRange(0.35f, 0.85f), Random.FRandRange(0.22f, 0.62f));
-        Bushes->AddInstance(FTransform(FRotator(0.0f, Random.FRandRange(0.0f, 360.0f), 0.0f), FVector(Point.X, Point.Y, GroundZ + 45.0f), Scale));
+        Bushes->AddInstance(FTransform(FRotator(0.0f, Random.FRandRange(0.0f, 360.0f), 0.0f), FVector(Point.X, Point.Y, GroundZ + (bUsingRealisticTreeMesh ? 0.0f : 45.0f)), Scale));
     }
 
     for (int32 Index = 0; Index < RockCount; ++Index)
@@ -269,8 +404,17 @@ void ANWProceduralWorldManager::BuildSettlements()
             const float X = Center.X + FMath::Cos(Angle) * Radius;
             const float Y = Center.Y + FMath::Sin(Angle) * Radius;
             const float GroundZ = SampleHeight(X, Y);
-            const FVector Scale(Random.FRandRange(2.4f, 4.2f), Random.FRandRange(2.2f, 3.8f), Random.FRandRange(2.2f, 4.8f));
-            Structures->AddInstance(FTransform(FRotator(0.0f, FMath::RadiansToDegrees(Angle) + 90.0f, 0.0f), FVector(X, Y, GroundZ + 50.0f * Scale.Z), Scale));
+
+            if (bUsingRealisticBuildingMesh)
+            {
+                const float UniformScale = Random.FRandRange(0.82f, 1.12f);
+                Buildings->AddInstance(FTransform(FRotator(0.0f, FMath::RadiansToDegrees(Angle) + 90.0f, 0.0f), FVector(X, Y, GroundZ), FVector(UniformScale)));
+            }
+            else
+            {
+                const FVector Scale(Random.FRandRange(2.4f, 4.2f), Random.FRandRange(2.2f, 3.8f), Random.FRandRange(2.2f, 4.8f));
+                Buildings->AddInstance(FTransform(FRotator(0.0f, FMath::RadiansToDegrees(Angle) + 90.0f, 0.0f), FVector(X, Y, GroundZ + 50.0f * Scale.Z), Scale));
+            }
         }
 
         for (int32 Wall = 0; Wall < 18; ++Wall)
