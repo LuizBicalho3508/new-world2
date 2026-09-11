@@ -3,6 +3,7 @@
 #include "CoreMinimal.h"
 #include "AssetRegistry/AssetData.h"
 #include "GameFramework/Actor.h"
+#include "NWCombatLibrary.h"
 #include "NWCombatTypes.h"
 #include "NWWorldTypes.h"
 #include "NWWorldEventDirector.generated.h"
@@ -74,6 +75,7 @@ private:
     TArray<FAssetData> NiagaraAssets;
     TArray<FAssetData> SoundAssets;
     TMap<TWeakObjectPtr<ANWCharacter>, TArray<float>> PreviousAbilityCooldowns;
+    TMap<TWeakObjectPtr<ANWCharacter>, ENWWeaponType> PreviousWeapons;
     TMap<TWeakObjectPtr<ANWCharacter>, ENWBiomeType> PreviousBiomes;
     TMap<TWeakObjectPtr<ANWCharacter>, ENWWeatherType> PreviousEffectiveWeather;
 
