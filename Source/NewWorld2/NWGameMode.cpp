@@ -5,8 +5,8 @@
 #include "GameFramework/Controller.h"
 #include "NWCharacter.h"
 #include "NWContentPresentationManager.h"
+#include "NWFabExpansionPresentationManager.h"
 #include "NWProceduralWorldManager.h"
-#include "NWRealisticContentPresentationManager.h"
 #include "NWWorldEventDirector.h"
 
 ANWGameMode::ANWGameMode()
@@ -45,7 +45,7 @@ void ANWGameMode::StartPlay()
         {
             FActorSpawnParameters Params;
             Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-            GetWorld()->SpawnActor<ANWRealisticContentPresentationManager>(ANWRealisticContentPresentationManager::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+            GetWorld()->SpawnActor<ANWFabExpansionPresentationManager>(ANWFabExpansionPresentationManager::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
         }
     }
 
