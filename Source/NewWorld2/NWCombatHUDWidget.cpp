@@ -7,6 +7,7 @@
 #include "Components/HorizontalBox.h"
 #include "Components/HorizontalBoxSlot.h"
 #include "Components/ProgressBar.h"
+#include "Components/ScrollBox.h"
 #include "Components/TextBlock.h"
 #include "Components/VerticalBox.h"
 #include "Components/VerticalBoxSlot.h"
@@ -133,8 +134,13 @@ void UNWCombatHUDWidget::BuildHUD()
     InventorySlot->SetAlignment(FVector2D(0.5f, 0.5f));
     InventorySlot->SetSize(FVector2D(900.0f, 700.0f));
 
+    UScrollBox* InventoryScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("InventoryScroll"));
+    InventoryScroll->SetScrollBarVisibility(ESlateVisibility::Visible);
+    InventoryScroll->SetAnimateWheelScrolling(true);
+    InventoryPanel->SetContent(InventoryScroll);
+
     InventoryText = MakeText(TEXT("BAG"), 14);
-    InventoryPanel->SetContent(InventoryText);
+    InventoryScroll->AddChild(InventoryText);
 }
 
 void UNWCombatHUDWidget::RefreshHUD()
@@ -174,7 +180,7 @@ void UNWCombatHUDWidget::RefreshHUD()
     FString State = Character->GetCombatStateLabel();
     if (Character->IsBrutalTransformationActive())
     {
-        State += FString::Printf(TEXT(" | METAMORFOSE %.0fs"), Character->GetBrutalTransformationRemaining());
+        State += TEXT(" | METAMORFOSE ATIVA");
     }
     State += FString::Printf(TEXT("\n[T] Destino: %s   [Y] TELEPORTAR"), *Character->GetSelectedFastTravelLabel());
     StateText->SetText(FText::FromString(State));
@@ -210,7 +216,7 @@ void UNWCombatHUDWidget::RefreshInventory()
     ANWCharacter* Character = ObservedCharacter.Get();
     if (!Character || !InventoryText) { return; }
 
-    FString Text = TEXT("BAG SEM LIMITE  [I fechar]   [Setas selecionar]   [Enter equipar/usar]\n");
+    FString Text = TEXT("BAG SEM LIMITE  [I fechar]   [Setas selecionar]   [Enter equipar/usar]   [Mouse wheel rolar]\n");
     Text += FString::Printf(TEXT("TOTAL: %d itens\n\nARMADURAS EQUIPADAS\n"), Character->GetInventoryItems().Num());
     for (const FNWGeneratedItem& Item : Character->GetEquippedItems())
     {
