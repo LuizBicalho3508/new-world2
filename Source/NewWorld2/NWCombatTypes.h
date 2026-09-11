@@ -34,6 +34,14 @@ enum class ENWEquipmentSlot : uint8
 };
 
 UENUM(BlueprintType)
+enum class ENWArmorWeight : uint8
+{
+    Light UMETA(DisplayName="Leve"),
+    Medium UMETA(DisplayName="Media"),
+    Heavy UMETA(DisplayName="Pesada")
+};
+
+UENUM(BlueprintType)
 enum class ENWItemRarity : uint8
 {
     Common,
@@ -150,10 +158,22 @@ struct FNWGeneratedItem
     ENWEquipmentSlot Slot = ENWEquipmentSlot::Gloves;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    ENWArmorWeight ArmorWeight = ENWArmorWeight::Medium;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
     ENWItemRarity Rarity = ENWItemRarity::Common;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly)
     int32 ItemLevel = 1;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    int32 AppearanceSeed = 0;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    FName StyleId = NAME_None;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    FName SetId = NAME_None;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly)
     TArray<FNWItemAffix> Affixes;
