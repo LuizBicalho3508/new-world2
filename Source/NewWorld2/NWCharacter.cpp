@@ -39,6 +39,14 @@ namespace
     constexpr uint8 AnimParry = 6;
     constexpr uint8 AnimHit = 7;
     constexpr uint8 AnimStagger = 8;
+    constexpr int32 WeaponCount = 7;
+    constexpr int32 AbilitiesPerWeapon = 3;
+    constexpr int32 TotalAbilityCooldowns = WeaponCount * AbilitiesPerWeapon;
+
+    int32 GetCooldownSlot(ENWWeaponType WeaponType, int32 AbilityIndex)
+    {
+        return FMath::Clamp(static_cast<int32>(WeaponType), 0, WeaponCount - 1) * AbilitiesPerWeapon + FMath::Clamp(AbilityIndex, 0, AbilitiesPerWeapon - 1);
+    }
 }
 
 ANWCharacter::ANWCharacter()
@@ -49,10 +57,9 @@ ANWCharacter::ANWCharacter()
     SetReplicateMovement(true);
     NetUpdateFrequency = 30.0f;
 
-    AbilityReadyTimes.SetNumZeroed(3);
+    AbilityReadyTimes.SetNumZeroed(TotalAbilityCooldowns);
 
     GetCapsuleComponent()->InitCapsuleSize(42.0f, 96.0f);
-
     bUseControllerRotationPitch = false;
     bUseControllerRotationYaw = false;
     bUseControllerRotationRoll = false;
@@ -81,16 +88,12 @@ ANWCharacter::ANWCharacter()
     DebugBody->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
     static ConstructorHelpers::FObjectFinder<UStaticMesh> CapsuleMesh(TEXT("/Engine/BasicShapes/Capsule.Capsule"));
-    if (CapsuleMesh.Succeeded())
-    {
-        DebugBody->SetStaticMesh(CapsuleMesh.Object);
-    }
+    if (CapsuleMesh.Succeeded()) { DebugBody->SetStaticMesh(CapsuleMesh.Object); }
 }
 
 void ANWCharacter::BeginPlay()
 {
     Super::BeginPlay();
-
     TryApplyLicensedCharacterVisual();
 
     if (HasAuthority())
@@ -99,7 +102,7 @@ void ANWCharacter::BeginPlay()
         RecalculateEquipmentStats();
         Health = MaxHealth;
         Stamina = MaxStamina;
-        AbilityReadyTimes.SetNumZeroed(3);
+        AbilityReadyTimes.SetNumZeroed(TotalAbilityCooldowns);
     }
 
     EnsureCombatHUD();
@@ -115,11 +118,9 @@ void ANWCharacter::PawnClientRestart()
 void ANWCharacter::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
-
     if (!HasAuthority() || !GetWorld()) { return; }
 
     const float Now = GetWorld()->GetTimeSeconds();
-
     if ((CombatState == ENWCombatState::Dodging || CombatState == ENWCombatState::Staggered) && Now >= CombatStateEndTime)
     {
         CombatState = ENWCombatState::Normal;
@@ -130,8 +131,8 @@ void ANWCharacter::Tick(float DeltaSeconds)
         ApplyStagger(0.85f, nullptr);
     }
 
-    const bool bCanRegenerateStamina = CombatState != ENWCombatState::Blocking && CombatState != ENWCombatState::Dodging && CombatState != ENWCombatState::Staggered;
-    if (bCanRegenerateStamina && (Now - LastDamageTime) >= 0.55f && Stamina < MaxStamina)
+    const bool bCanRegen = CombatState != ENWCombatState::Blocking && CombatState != ENWCombatState::Dodging && CombatState != ENWCombatState::Staggered;
+    if (bCanRegen && (Now - LastDamageTime) >= 0.55f && Stamina < MaxStamina)
     {
         Stamina = FMath::Min(MaxStamina, Stamina + 26.0f * DeltaSeconds);
     }
@@ -268,14 +269,8 @@ void ANWCharacter::StopBlock()
 void ANWCharacter::Dodge()
 {
     FVector Direction = GetLastMovementInputVector();
-    if (Direction.IsNearlyZero())
-    {
-        Direction = GetVelocity().GetSafeNormal2D();
-    }
-    if (Direction.IsNearlyZero())
-    {
-        Direction = GetActorForwardVector();
-    }
+    if (Direction.IsNearlyZero()) { Direction = GetVelocity().GetSafeNormal2D(); }
+    if (Direction.IsNearlyZero()) { Direction = GetActorForwardVector(); }
     Direction.Z = 0.0f;
     Direction.Normalize();
 
@@ -324,10 +319,7 @@ void ANWCharacter::ServerEquipInventoryItem_Implementation(int32 ItemSeed) { Equ
 
 void ANWCharacter::ServerSetActiveWeapon_Implementation(ENWWeaponType RequestedWeapon)
 {
-    if (RequestedWeapon == PrimaryWeapon || RequestedWeapon == SecondaryWeapon)
-    {
-        SetActiveWeaponInternal(RequestedWeapon);
-    }
+    if (RequestedWeapon == PrimaryWeapon || RequestedWeapon == SecondaryWeapon) { SetActiveWeaponInternal(RequestedWeapon); }
 }
 
 void ANWCharacter::ServerCycleLoadout_Implementation(bool bPrimarySlot)
@@ -339,7 +331,6 @@ void ANWCharacter::ServerCycleLoadout_Implementation(bool bPrimarySlot)
     Slot = NWCombat::GetNextWeaponType(Slot);
     if (Slot == Other) { Slot = NWCombat::GetNextWeaponType(Slot); }
     if (ActiveWeapon == Previous) { ActiveWeapon = Slot; }
-
     LogLoadout();
 }
 
@@ -368,11 +359,7 @@ void ANWCharacter::ServerPickupNearestLoot_Implementation()
             BestPickup = *It;
         }
     }
-
-    if (BestPickup)
-    {
-        BestPickup->TryPickup(this);
-    }
+    if (BestPickup) { BestPickup->TryPickup(this); }
 }
 
 void ANWCharacter::ExecuteAttack()
@@ -400,27 +387,25 @@ void ANWCharacter::ExecuteAttack()
         DamagedActors.Add(Target);
         ApplyWeaponDamage(Target, Weapon.BasicDamage, true, false);
 
-        if (ActiveWeapon == ENWWeaponType::Staff || ActiveWeapon == ENWWeaponType::Bow || ActiveWeapon == ENWWeaponType::Firearm)
-        {
-            break;
-        }
+        if (ActiveWeapon == ENWWeaponType::Staff || ActiveWeapon == ENWWeaponType::Bow || ActiveWeapon == ENWWeaponType::Firearm) { break; }
     }
 }
 
 void ANWCharacter::ExecuteAbility(uint8 AbilityIndex)
 {
-    if (!GetWorld() || AbilityIndex >= 3 || CombatState != ENWCombatState::Normal) { return; }
-    if (AbilityReadyTimes.Num() < 3) { AbilityReadyTimes.SetNumZeroed(3); }
+    if (!GetWorld() || AbilityIndex >= AbilitiesPerWeapon || CombatState != ENWCombatState::Normal) { return; }
+    if (AbilityReadyTimes.Num() < TotalAbilityCooldowns) { AbilityReadyTimes.SetNumZeroed(TotalAbilityCooldowns); }
 
     const FNWWeaponDefinition Weapon = NWCombat::GetWeaponDefinition(ActiveWeapon);
     if (!Weapon.Abilities.IsValidIndex(AbilityIndex)) { return; }
 
+    const int32 CooldownSlot = GetCooldownSlot(ActiveWeapon, AbilityIndex);
     const FNWWeaponAbilityDefinition& Ability = Weapon.Abilities[AbilityIndex];
     const float Now = GetWorld()->GetTimeSeconds();
-    if (Now < AbilityReadyTimes[AbilityIndex]) { return; }
+    if (Now < AbilityReadyTimes[CooldownSlot]) { return; }
 
     const float EffectiveCooldown = FMath::Max(0.8f, Ability.Cooldown * CooldownMultiplier);
-    AbilityReadyTimes[AbilityIndex] = Now + EffectiveCooldown;
+    AbilityReadyTimes[CooldownSlot] = Now + EffectiveCooldown;
 
     float ComboMultiplier = 1.0f;
     if ((Now - LastAbilityTime) <= ComboWindowSeconds && LastAbilityWeapon != ActiveWeapon)
@@ -507,7 +492,6 @@ void ANWCharacter::ExecuteSetBlocking(bool bBlocking)
 void ANWCharacter::ExecuteDodge(const FVector& Direction)
 {
     if (!GetWorld() || CombatState == ENWCombatState::Dodging || CombatState == ENWCombatState::Staggered || Stamina < 22.0f) { return; }
-
     if (CombatState == ENWCombatState::Blocking) { ExecuteSetBlocking(false); }
 
     Stamina = FMath::Max(0.0f, Stamina - 22.0f);
@@ -544,14 +528,9 @@ float ANWCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEve
         if (Now <= ParryWindowEndTime)
         {
             Stamina = FMath::Min(MaxStamina, Stamina + 7.0f);
-            if (ParryHealMagnitude > 0.0f)
-            {
-                Health = FMath::Min(MaxHealth, Health + ParryHealMagnitude);
-            }
-
+            if (ParryHealMagnitude > 0.0f) { Health = FMath::Min(MaxHealth, Health + ParryHealMagnitude); }
             if (ANWEnemy* Enemy = Cast<ANWEnemy>(DamageCauser)) { Enemy->ApplyStagger(1.15f); }
             if (ANWCharacter* OtherCharacter = Cast<ANWCharacter>(DamageCauser)) { OtherCharacter->ApplyStagger(1.15f, this); }
-
             MulticastPlayCombatAnimation(AnimParry);
             UE_LOG(LogTemp, Display, TEXT("[PARRY] perfeito | stamina %.0f | vida %.0f"), Stamina, Health);
             return 0.0f;
@@ -559,32 +538,22 @@ float ANWCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEve
 
         const float BlockReduction = FMath::Clamp(0.62f + GuardMagnitude * 0.012f, 0.62f, 0.90f);
         const float StaminaFactor = FMath::Clamp(0.48f - GuardMagnitude * 0.006f, 0.24f, 0.48f);
-        const float StaminaDamage = FMath::Max(4.0f, DamageAmount * StaminaFactor);
-        Stamina = FMath::Max(0.0f, Stamina - StaminaDamage);
+        Stamina = FMath::Max(0.0f, Stamina - FMath::Max(4.0f, DamageAmount * StaminaFactor));
         AdjustedDamage *= (1.0f - BlockReduction);
-
-        if (Stamina <= KINDA_SMALL_NUMBER)
-        {
-            ApplyStagger(0.85f, DamageCauser);
-        }
+        if (Stamina <= KINDA_SMALL_NUMBER) { ApplyStagger(0.85f, DamageCauser); }
     }
 
-    const float ArmorReduction = FMath::Clamp(ArmorValue * 0.006f, 0.0f, 0.45f);
-    AdjustedDamage *= (1.0f - ArmorReduction);
+    AdjustedDamage *= (1.0f - FMath::Clamp(ArmorValue * 0.006f, 0.0f, 0.45f));
 
     const float AppliedDamage = Super::TakeDamage(AdjustedDamage, DamageEvent, EventInstigator, DamageCauser);
     if (AppliedDamage <= 0.0f) { return AppliedDamage; }
 
     LastDamageTime = Now;
     Health = FMath::Clamp(Health - AppliedDamage, 0.0f, MaxHealth);
-
     if (CombatState == ENWCombatState::Normal)
     {
         MulticastPlayCombatAnimation(AnimHit);
-        if (AppliedDamage >= MaxHealth * 0.28f)
-        {
-            ApplyStagger(0.34f, DamageCauser);
-        }
+        if (AppliedDamage >= MaxHealth * 0.28f) { ApplyStagger(0.34f, DamageCauser); }
     }
 
     if (Health <= 0.0f)
@@ -594,7 +563,6 @@ float ANWCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEve
         CombatState = ENWCombatState::Normal;
         SetActorLocation(FVector(0.0f, 0.0f, 1500.0f), false, nullptr, ETeleportType::TeleportPhysics);
     }
-
     return AppliedDamage;
 }
 
@@ -612,7 +580,6 @@ void ANWCharacter::ApplyStagger(float DurationSeconds, AActor* SourceActor)
         const FVector Away = (GetActorLocation() - SourceActor->GetActorLocation()).GetSafeNormal2D();
         LaunchCharacter(Away * 145.0f, true, false);
     }
-
     MulticastPlayCombatAnimation(AnimStagger);
 }
 
@@ -628,43 +595,25 @@ void ANWCharacter::ApplyWeaponDamage(AActor* Target, float BaseDamage, bool bAll
         Damage *= 1.0f + FMath::Clamp(DodgeEmpowerMagnitude * 0.02f, 0.05f, 0.45f);
         DodgeEmpowerEndTime = -1000.0f;
     }
-
     if (GetTargetHealthRatio(Target) <= 0.30f && ExecutionerMagnitude > 0.0f)
     {
         Damage *= 1.0f + FMath::Clamp(ExecutionerMagnitude * 0.025f, 0.05f, 0.50f);
     }
 
     UGameplayStatics::ApplyDamage(Target, Damage, GetController(), this, UDamageType::StaticClass());
-
-    if (LifeStealPercent > 0.0f)
-    {
-        Health = FMath::Clamp(Health + Damage * LifeStealPercent, 0.0f, MaxHealth);
-    }
+    if (LifeStealPercent > 0.0f) { Health = FMath::Clamp(Health + Damage * LifeStealPercent, 0.0f, MaxHealth); }
 
     if (bCritical && CooldownOnCritMagnitude > 0.0f)
     {
         const float Now = GetWorld()->GetTimeSeconds();
         const float Reduction = FMath::Clamp(CooldownOnCritMagnitude * 0.04f, 0.08f, 0.75f);
-        for (float& ReadyAt : AbilityReadyTimes)
-        {
-            ReadyAt = FMath::Max(Now, ReadyAt - Reduction);
-        }
+        for (float& ReadyAt : AbilityReadyTimes) { ReadyAt = FMath::Max(Now, ReadyAt - Reduction); }
     }
 
     if (!bAllowStatusEffects) { return; }
-
-    if (PoisonDamagePerTick > 0.0f && NWCombat::IsPoisonCompatible(ActiveWeapon))
-    {
-        ApplyStatusDamage(Target, PoisonDamagePerTick, 3, 1.0f);
-    }
-    if (FireDamagePerTick > 0.0f)
-    {
-        ApplyStatusDamage(Target, FireDamagePerTick, 3, 0.75f);
-    }
-    if (BleedDamagePerTick > 0.0f && ActiveWeapon != ENWWeaponType::Staff && ActiveWeapon != ENWWeaponType::Firearm)
-    {
-        ApplyStatusDamage(Target, BleedDamagePerTick, 4, 0.65f);
-    }
+    if (PoisonDamagePerTick > 0.0f && NWCombat::IsPoisonCompatible(ActiveWeapon)) { ApplyStatusDamage(Target, PoisonDamagePerTick, 3, 1.0f); }
+    if (FireDamagePerTick > 0.0f) { ApplyStatusDamage(Target, FireDamagePerTick, 3, 0.75f); }
+    if (BleedDamagePerTick > 0.0f && ActiveWeapon != ENWWeaponType::Staff && ActiveWeapon != ENWWeaponType::Firearm) { ApplyStatusDamage(Target, BleedDamagePerTick, 4, 0.65f); }
 
     if (bFromAbility)
     {
@@ -704,13 +653,9 @@ void ANWCharacter::ApplyStatusDamage(AActor* Target, float DamagePerTick, int32 
             if (WeakSelf.IsValid()) { WeakSelf->GetWorldTimerManager().ClearTimer(*TimerHandle); }
             return;
         }
-
         UGameplayStatics::ApplyDamage(WeakTarget.Get(), DamagePerTick, WeakSelf->GetController(), WeakSelf.Get(), UDamageType::StaticClass());
         --(*RemainingTicks);
-        if (*RemainingTicks <= 0)
-        {
-            WeakSelf->GetWorldTimerManager().ClearTimer(*TimerHandle);
-        }
+        if (*RemainingTicks <= 0) { WeakSelf->GetWorldTimerManager().ClearTimer(*TimerHandle); }
     }), IntervalSeconds, true, IntervalSeconds);
 }
 
@@ -743,17 +688,13 @@ void ANWCharacter::ApplyFrostbite(AActor* Target)
     if (!Movement) { return; }
 
     const float OriginalSpeed = Movement->MaxWalkSpeed;
-    const float SlowMultiplier = FMath::Clamp(1.0f - FrostbiteMagnitude * 0.018f, 0.52f, 0.88f);
-    Movement->MaxWalkSpeed = OriginalSpeed * SlowMultiplier;
+    Movement->MaxWalkSpeed = OriginalSpeed * FMath::Clamp(1.0f - FrostbiteMagnitude * 0.018f, 0.52f, 0.88f);
 
     TWeakObjectPtr<ACharacter> WeakCharacter(TargetCharacter);
     FTimerHandle Handle;
     GetWorldTimerManager().SetTimer(Handle, FTimerDelegate::CreateLambda([WeakCharacter, OriginalSpeed]()
     {
-        if (WeakCharacter.IsValid() && WeakCharacter->GetCharacterMovement())
-        {
-            WeakCharacter->GetCharacterMovement()->MaxWalkSpeed = OriginalSpeed;
-        }
+        if (WeakCharacter.IsValid() && WeakCharacter->GetCharacterMovement()) { WeakCharacter->GetCharacterMovement()->MaxWalkSpeed = OriginalSpeed; }
     }), 1.55f, false);
 }
 
@@ -763,10 +704,7 @@ float ANWCharacter::GetTargetHealthRatio(AActor* Target) const
     {
         return OtherCharacter->GetMaxHealth() > 0.0f ? OtherCharacter->GetHealth() / OtherCharacter->GetMaxHealth() : 1.0f;
     }
-    if (const ANWEnemy* Enemy = Cast<ANWEnemy>(Target))
-    {
-        return Enemy->GetHealthRatio();
-    }
+    if (const ANWEnemy* Enemy = Cast<ANWEnemy>(Target)) { return Enemy->GetHealthRatio(); }
     return 1.0f;
 }
 
@@ -811,7 +749,7 @@ void ANWCharacter::EquipInventoryItemBySeed(int32 ItemSeed)
     SelectedInventoryIndex = FMath::Clamp(SelectedInventoryIndex, 0, FMath::Max(0, InventoryItems.Num() - 1));
     RecalculateEquipmentStats();
     ForceNetUpdate();
-    UE_LOG(LogTemp, Display, TEXT("[EQUIP] %s equipado no slot %s"), *NewItem.Name, *NWCombat::EquipmentSlotToString(NewItem.Slot));
+    UE_LOG(LogTemp, Display, TEXT("[EQUIP] %s equipado | classe %s | estilo %s"), *NewItem.Name, *NWCombat::ArmorWeightToString(NewItem.ArmorWeight), *NewItem.StyleId.ToString());
 }
 
 void ANWCharacter::EnsureStarterEquipment()
@@ -821,8 +759,11 @@ void ANWCharacter::EnsureStarterEquipment()
     FNWGeneratedItem Gloves;
     Gloves.ItemSeed = 1001;
     Gloves.ItemLevel = 1;
+    Gloves.AppearanceSeed = 11001;
     Gloves.Name = TEXT("Luvas do Alquimista - Prototipo");
     Gloves.Slot = ENWEquipmentSlot::Gloves;
+    Gloves.ArmorWeight = ENWArmorWeight::Medium;
+    Gloves.StyleId = TEXT("Battlemage");
     Gloves.Rarity = ENWItemRarity::Rare;
     Gloves.Affixes = { { ENWAffixType::PoisonCoating, 5.0f }, { ENWAffixType::ParryHeal, 3.0f } };
     EquippedItems.Add(Gloves);
@@ -830,17 +771,23 @@ void ANWCharacter::EnsureStarterEquipment()
     FNWGeneratedItem Chest;
     Chest.ItemSeed = 1002;
     Chest.ItemLevel = 1;
+    Chest.AppearanceSeed = 11002;
     Chest.Name = TEXT("Peitoral do Vanguardista - Prototipo");
     Chest.Slot = ENWEquipmentSlot::Chest;
+    Chest.ArmorWeight = ENWArmorWeight::Heavy;
+    Chest.StyleId = TEXT("IronVanguard");
     Chest.Rarity = ENWItemRarity::Uncommon;
-    Chest.Affixes = { { ENWAffixType::Power, 4.0f }, { ENWAffixType::FortifiedGuard, 3.0f } };
+    Chest.Affixes = { { ENWAffixType::Armor, 4.0f }, { ENWAffixType::Vitality, 3.0f }, { ENWAffixType::FortifiedGuard, 3.0f } };
     EquippedItems.Add(Chest);
 
     FNWGeneratedItem Boots;
     Boots.ItemSeed = 1003;
     Boots.ItemLevel = 1;
+    Boots.AppearanceSeed = 11003;
     Boots.Name = TEXT("Botas do Vento - Prototipo");
     Boots.Slot = ENWEquipmentSlot::Boots;
+    Boots.ArmorWeight = ENWArmorWeight::Light;
+    Boots.StyleId = TEXT("Ranger");
     Boots.Rarity = ENWItemRarity::Uncommon;
     Boots.Affixes = { { ENWAffixType::DodgeEmpower, 3.0f }, { ENWAffixType::Haste, 2.0f } };
     EquippedItems.Add(Boots);
@@ -907,8 +854,10 @@ float ANWCharacter::RollDamageWithStats(float BaseDamage, bool& bOutCritical) co
 
 float ANWCharacter::GetAbilityCooldownRemaining(int32 AbilityIndex) const
 {
-    if (!GetWorld() || !AbilityReadyTimes.IsValidIndex(AbilityIndex)) { return 0.0f; }
-    return FMath::Max(0.0f, AbilityReadyTimes[AbilityIndex] - GetWorld()->GetTimeSeconds());
+    if (!GetWorld() || AbilityIndex < 0 || AbilityIndex >= AbilitiesPerWeapon) { return 0.0f; }
+    const int32 CooldownSlot = GetCooldownSlot(ActiveWeapon, AbilityIndex);
+    if (!AbilityReadyTimes.IsValidIndex(CooldownSlot)) { return 0.0f; }
+    return FMath::Max(0.0f, AbilityReadyTimes[CooldownSlot] - GetWorld()->GetTimeSeconds());
 }
 
 FString ANWCharacter::GetCombatStateLabel() const
@@ -1081,11 +1030,11 @@ bool ANWCharacter::TryPlayCompatibleSequence(const TArray<FString>& Keywords, fl
         UAnimSequence* Sequence = Cast<UAnimSequence>(Asset.GetAsset());
         if (!Sequence || Sequence->GetSkeleton() != GetMesh()->GetSkeletalMeshAsset()->GetSkeleton()) { continue; }
 
-        UAnimInstance* AnimInstance = GetMesh()->GetAnimInstance();
+        UAnimInstance* LocalAnimInstance = GetMesh()->GetAnimInstance();
         UAnimMontage* DynamicMontage = UAnimMontage::CreateSlotAnimationAsDynamicMontage(Sequence, FName(TEXT("DefaultSlot")), 0.07f, 0.10f, PlayRate, 1);
-        if (AnimInstance && DynamicMontage)
+        if (LocalAnimInstance && DynamicMontage)
         {
-            AnimInstance->Montage_Play(DynamicMontage, 1.0f);
+            LocalAnimInstance->Montage_Play(DynamicMontage, 1.0f);
             return true;
         }
     }
