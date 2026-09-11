@@ -52,7 +52,27 @@ enum class ENWAffixType : uint8
     Haste,
     Healing,
     PoisonCoating,
-    LifeSteal
+    LifeSteal,
+    Armor,
+    Firebrand,
+    Frostbite,
+    ShockChain,
+    AbilityEcho,
+    CooldownOnCrit,
+    FortifiedGuard,
+    ParryHeal,
+    DodgeEmpower,
+    Bleed,
+    Executioner
+};
+
+UENUM(BlueprintType)
+enum class ENWCombatState : uint8
+{
+    Normal,
+    Blocking,
+    Dodging,
+    Staggered
 };
 
 USTRUCT(BlueprintType)
@@ -131,6 +151,9 @@ struct FNWGeneratedItem
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly)
     ENWItemRarity Rarity = ENWItemRarity::Common;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    int32 ItemLevel = 1;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly)
     TArray<FNWItemAffix> Affixes;
