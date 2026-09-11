@@ -8,6 +8,7 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "Modules/ModuleManager.h"
+#include "Net/UnrealNetwork.h"
 #include "NWDungeonGuardian.h"
 #include "NWEnemy.h"
 #include "UObject/ConstructorHelpers.h"
@@ -41,17 +42,32 @@ ANWDungeonSite::ANWDungeonSite()
     if (SphereMesh.Succeeded()) { SecondaryStructures->SetStaticMesh(SphereMesh.Object); }
 }
 
+void ANWDungeonSite::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
+{
+    Super::GetLifetimeReplicatedProps(OutLifetimeProps);
+    DOREPLIFETIME(ANWDungeonSite, DungeonType);
+    DOREPLIFETIME(ANWDungeonSite, DungeonSeed);
+    DOREPLIFETIME(ANWDungeonSite, DungeonTier);
+}
+
 void ANWDungeonSite::ConfigureDungeon(ENWDungeonType InType, int32 InSeed, int32 InTier)
 {
     DungeonType = InType;
     DungeonSeed = InSeed;
     DungeonTier = FMath::Clamp(InTier, 1, 10);
 
+    if (HasAuthority()) { ForceNetUpdate(); }
+
     if (HasActorBegunPlay())
     {
         BuildDungeonGeometry();
         if (HasAuthority()) { SpawnDungeonPopulation(); }
     }
+}
+
+void ANWDungeonSite::OnRep_DungeonConfiguration()
+{
+    if (HasActorBegunPlay()) { BuildDungeonGeometry(); }
 }
 
 void ANWDungeonSite::BeginPlay()
