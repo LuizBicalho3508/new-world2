@@ -35,6 +35,75 @@ namespace
                 return true;
         }
     }
+
+    void AddAffixIfMissing(FNWGeneratedItem& Item, ENWAffixType Type, float Magnitude)
+    {
+        if (!IsSlotCompatible(Item.Slot, Type)) { return; }
+        for (const FNWItemAffix& Existing : Item.Affixes)
+        {
+            if (Existing.Type == Type) { return; }
+        }
+        FNWItemAffix Affix;
+        Affix.Type = Type;
+        Affix.Magnitude = Magnitude;
+        Item.Affixes.Add(Affix);
+    }
+
+    ENWArmorWeight RollArmorWeight(FRandomStream& Random)
+    {
+        const int32 Roll = Random.RandRange(0, 99);
+        if (Roll < 33) { return ENWArmorWeight::Light; }
+        if (Roll < 67) { return ENWArmorWeight::Medium; }
+        return ENWArmorWeight::Heavy;
+    }
+
+    FName PickStyle(ENWArmorWeight Weight, FRandomStream& Random)
+    {
+        static const FName LightStyles[] = {
+            TEXT("Arcanist"), TEXT("Shadowweave"), TEXT("Ranger"), TEXT("Duelist"), TEXT("Moonveil"), TEXT("Wanderer")
+        };
+        static const FName MediumStyles[] = {
+            TEXT("Warden"), TEXT("Mercenary"), TEXT("Hunter"), TEXT("Battlemage"), TEXT("Corsair"), TEXT("Pathfinder")
+        };
+        static const FName HeavyStyles[] = {
+            TEXT("DreadKnight"), TEXT("RoyalGuard"), TEXT("IronVanguard"), TEXT("Dragonplate"), TEXT("Crusader"), TEXT("Obsidian")
+        };
+
+        switch (Weight)
+        {
+            case ENWArmorWeight::Light: return LightStyles[Random.RandRange(0, UE_ARRAY_COUNT(LightStyles) - 1)];
+            case ENWArmorWeight::Heavy: return HeavyStyles[Random.RandRange(0, UE_ARRAY_COUNT(HeavyStyles) - 1)];
+            default: return MediumStyles[Random.RandRange(0, UE_ARRAY_COUNT(MediumStyles) - 1)];
+        }
+    }
+
+    void AddArmorIdentityAffixes(FNWGeneratedItem& Item, FRandomStream& Random, float Scale)
+    {
+        switch (Item.ArmorWeight)
+        {
+            case ENWArmorWeight::Heavy:
+                AddAffixIfMissing(Item, ENWAffixType::Armor, Random.FRandRange(2.6f, 4.8f) * Scale);
+                AddAffixIfMissing(Item, ENWAffixType::Vitality, Random.FRandRange(1.6f, 3.4f) * Scale);
+                if (Item.Slot == ENWEquipmentSlot::Chest || Item.Slot == ENWEquipmentSlot::Head)
+                {
+                    AddAffixIfMissing(Item, ENWAffixType::FortifiedGuard, Random.FRandRange(1.2f, 2.8f) * Scale);
+                }
+                break;
+            case ENWArmorWeight::Light:
+                AddAffixIfMissing(Item, ENWAffixType::Haste, Random.FRandRange(2.0f, 4.0f) * Scale);
+                AddAffixIfMissing(Item, ENWAffixType::Healing, Random.FRandRange(1.3f, 3.0f) * Scale);
+                if (Item.Slot == ENWEquipmentSlot::Boots || Item.Slot == ENWEquipmentSlot::Legs)
+                {
+                    AddAffixIfMissing(Item, ENWAffixType::DodgeEmpower, Random.FRandRange(1.2f, 2.6f) * Scale);
+                }
+                break;
+            case ENWArmorWeight::Medium:
+            default:
+                AddAffixIfMissing(Item, ENWAffixType::Precision, Random.FRandRange(1.8f, 3.6f) * Scale);
+                AddAffixIfMissing(Item, ENWAffixType::Power, Random.FRandRange(1.5f, 3.1f) * Scale);
+                break;
+        }
+    }
 }
 
 FNWWeaponDefinition NWCombat::GetWeaponDefinition(ENWWeaponType WeaponType)
@@ -75,7 +144,6 @@ FNWWeaponDefinition NWCombat::GetWeaponDefinition(ENWWeaponType WeaponType)
         default:
             break;
     }
-
     return Def;
 }
 
@@ -88,8 +156,7 @@ bool NWCombat::IsPoisonCompatible(ENWWeaponType WeaponType)
 
 ENWWeaponType NWCombat::GetNextWeaponType(ENWWeaponType WeaponType)
 {
-    const uint8 Next = (static_cast<uint8>(WeaponType) + 1u) % 7u;
-    return static_cast<ENWWeaponType>(Next);
+    return static_cast<ENWWeaponType>((static_cast<uint8>(WeaponType) + 1u) % 7u);
 }
 
 FString NWCombat::RarityToString(ENWItemRarity Rarity)
@@ -115,6 +182,16 @@ FString NWCombat::EquipmentSlotToString(ENWEquipmentSlot Slot)
         case ENWEquipmentSlot::Legs: return TEXT("Pernas");
         case ENWEquipmentSlot::Boots: return TEXT("Botas");
         default: return TEXT("Item");
+    }
+}
+
+FString NWCombat::ArmorWeightToString(ENWArmorWeight ArmorWeight)
+{
+    switch (ArmorWeight)
+    {
+        case ENWArmorWeight::Light: return TEXT("Leve");
+        case ENWArmorWeight::Heavy: return TEXT("Pesada");
+        default: return TEXT("Media");
     }
 }
 
@@ -162,8 +239,11 @@ FNWGeneratedItem NWCombat::GenerateProceduralItem(int32 LootSeed, int32 WorldEpo
     FRandomStream Random(LootSeed ^ (WorldEpoch * 7919));
     FNWGeneratedItem Item;
     Item.ItemSeed = LootSeed;
+    Item.AppearanceSeed = Random.RandRange(1, MAX_int32);
     Item.ItemLevel = FMath::Max(1, 1 + WorldEpoch / 3 + Random.RandRange(0, 2));
     Item.Slot = static_cast<ENWEquipmentSlot>(Random.RandRange(0, 4));
+    Item.ArmorWeight = RollArmorWeight(Random);
+    Item.StyleId = PickStyle(Item.ArmorWeight, Random);
 
     const int32 RarityRoll = Random.RandRange(0, 999);
     if (RarityRoll < 470) Item.Rarity = ENWItemRarity::Common;
@@ -173,12 +253,16 @@ FNWGeneratedItem NWCombat::GenerateProceduralItem(int32 LootSeed, int32 WorldEpo
     else Item.Rarity = ENWItemRarity::Legendary;
 
     const int32 RarityLevel = static_cast<int32>(Item.Rarity) + 1;
-    const int32 AffixCount = FMath::Clamp(1 + (RarityLevel - 1) / 2 + (Item.Rarity == ENWItemRarity::Legendary ? 1 : 0), 1, 4);
+    const float IdentityScale = (0.70f + RarityLevel * 0.32f) * (1.0f + Item.ItemLevel * 0.025f);
+    AddArmorIdentityAffixes(Item, Random, IdentityScale);
+
+    const int32 DesiredAffixes = FMath::Clamp(1 + (RarityLevel - 1) / 2 + (Item.Rarity == ENWItemRarity::Legendary ? 1 : 0), 2, 5);
     TSet<ENWAffixType> UsedAffixes;
+    for (const FNWItemAffix& Existing : Item.Affixes) { UsedAffixes.Add(Existing.Type); }
 
     const int32 AffixTypeCount = static_cast<int32>(ENWAffixType::Executioner) + 1;
     int32 Guard = 0;
-    while (Item.Affixes.Num() < AffixCount && Guard++ < 100)
+    while (Item.Affixes.Num() < DesiredAffixes && Guard++ < 120)
     {
         const ENWAffixType Type = static_cast<ENWAffixType>(Random.RandRange(0, AffixTypeCount - 1));
         if (UsedAffixes.Contains(Type) || !IsSlotCompatible(Item.Slot, Type)) { continue; }
@@ -191,7 +275,45 @@ FNWGeneratedItem NWCombat::GenerateProceduralItem(int32 LootSeed, int32 WorldEpo
         UsedAffixes.Add(Type);
     }
 
-    Item.Name = FString::Printf(TEXT("%s %s E%d [%04d]"), *RarityToString(Item.Rarity), *EquipmentSlotToString(Item.Slot), Item.ItemLevel, FMath::Abs(LootSeed % 10000));
+    Item.Name = FString::Printf(TEXT("%s %s %s - %s E%d [%04d]"),
+        *RarityToString(Item.Rarity),
+        *ArmorWeightToString(Item.ArmorWeight),
+        *EquipmentSlotToString(Item.Slot),
+        *Item.StyleId.ToString(),
+        Item.ItemLevel,
+        FMath::Abs(LootSeed % 10000));
+    return Item;
+}
+
+FNWGeneratedItem NWCombat::GenerateLegendaryDungeonItem(int32 LootSeed, int32 WorldEpoch, FName DungeonTheme)
+{
+    FNWGeneratedItem Item = GenerateProceduralItem(LootSeed, FMath::Max(1, WorldEpoch + 3));
+    Item.Rarity = ENWItemRarity::Legendary;
+    Item.ItemLevel += 3;
+    Item.SetId = DungeonTheme.IsNone() ? FName(TEXT("AncientLegend")) : DungeonTheme;
+    Item.StyleId = Item.SetId;
+
+    FRandomStream Random(LootSeed ^ 0x5A17C3);
+    const float LegendaryScale = 2.2f + Item.ItemLevel * 0.08f;
+
+    if (DungeonTheme == FName(TEXT("DarkCastle")))
+    {
+        AddAffixIfMissing(Item, ENWAffixType::LifeSteal, Random.FRandRange(3.0f, 6.0f) * LegendaryScale);
+        AddAffixIfMissing(Item, ENWAffixType::Executioner, Random.FRandRange(2.5f, 5.5f) * LegendaryScale);
+        AddAffixIfMissing(Item, ENWAffixType::AbilityEcho, Random.FRandRange(2.0f, 4.5f) * LegendaryScale);
+    }
+    else
+    {
+        AddAffixIfMissing(Item, ENWAffixType::Frostbite, Random.FRandRange(2.0f, 4.0f) * LegendaryScale);
+        AddAffixIfMissing(Item, ENWAffixType::ShockChain, Random.FRandRange(2.0f, 4.0f) * LegendaryScale);
+        AddAffixIfMissing(Item, ENWAffixType::Vitality, Random.FRandRange(3.0f, 5.0f) * LegendaryScale);
+    }
+
+    Item.Name = FString::Printf(TEXT("LENDARIO %s - %s %s [%04d]"),
+        *Item.SetId.ToString(),
+        *ArmorWeightToString(Item.ArmorWeight),
+        *EquipmentSlotToString(Item.Slot),
+        FMath::Abs(LootSeed % 10000));
     return Item;
 }
 
@@ -216,5 +338,6 @@ float NWCombat::GetItemScore(const FNWGeneratedItem& Item)
         }
         Score += Affix.Magnitude * Weight;
     }
+    if (!Item.SetId.IsNone()) { Score += 24.0f; }
     return Score;
 }
