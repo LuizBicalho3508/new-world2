@@ -42,6 +42,39 @@ enum class ENWArmorWeight : uint8
 };
 
 UENUM(BlueprintType)
+enum class ENWItemKind : uint8
+{
+    Armor UMETA(DisplayName="Armadura"),
+    Weapon UMETA(DisplayName="Arma"),
+    Consumable UMETA(DisplayName="Consumivel")
+};
+
+UENUM(BlueprintType)
+enum class ENWConsumableType : uint8
+{
+    None,
+    BrutalLegendaryTransformation UMETA(DisplayName="Pocao da Armadura Brutal Lendaria")
+};
+
+UENUM(BlueprintType)
+enum class ENWArrowElement : uint8
+{
+    Physical UMETA(DisplayName="Fisica"),
+    Fire UMETA(DisplayName="Fogo"),
+    Poison UMETA(DisplayName="Veneno"),
+    Lightning UMETA(DisplayName="Eletrica"),
+    Frost UMETA(DisplayName="Gelo")
+};
+
+UENUM(BlueprintType)
+enum class ENWEnemyArchetype : uint8
+{
+    Brute UMETA(DisplayName="Bruto"),
+    Zombie UMETA(DisplayName="Zumbi"),
+    Ghost UMETA(DisplayName="Fantasma")
+};
+
+UENUM(BlueprintType)
 enum class ENWItemRarity : uint8
 {
     Common,
@@ -81,6 +114,18 @@ enum class ENWCombatState : uint8
     Blocking,
     Dodging,
     Staggered
+};
+
+USTRUCT(BlueprintType)
+struct FNWWeaponPassiveDefinition
+{
+    GENERATED_BODY()
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    FString Name;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    FString Description;
 };
 
 USTRUCT(BlueprintType)
@@ -129,6 +174,9 @@ struct FNWWeaponDefinition
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly)
     TArray<FNWWeaponAbilityDefinition> Abilities;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    TArray<FNWWeaponPassiveDefinition> Passives;
 };
 
 USTRUCT(BlueprintType)
@@ -155,10 +203,19 @@ struct FNWGeneratedItem
     FString Name;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    ENWItemKind Kind = ENWItemKind::Armor;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
     ENWEquipmentSlot Slot = ENWEquipmentSlot::Gloves;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly)
     ENWArmorWeight ArmorWeight = ENWArmorWeight::Medium;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    ENWWeaponType WeaponType = ENWWeaponType::Greatsword;
+
+    UPROPERTY(EditAnywhere, BlueprintReadOnly)
+    ENWConsumableType ConsumableType = ENWConsumableType::None;
 
     UPROPERTY(EditAnywhere, BlueprintReadOnly)
     ENWItemRarity Rarity = ENWItemRarity::Common;
