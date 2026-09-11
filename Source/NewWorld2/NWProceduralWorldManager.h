@@ -4,7 +4,9 @@
 #include "GameFramework/Actor.h"
 #include "NWProceduralWorldManager.generated.h"
 
+class ANWCivilian;
 class ANWEnemy;
+class ANWSettlementCore;
 class UDirectionalLightComponent;
 class UExponentialHeightFogComponent;
 class UHierarchicalInstancedStaticMeshComponent;
@@ -48,10 +50,16 @@ protected:
     TObjectPtr<UHierarchicalInstancedStaticMeshComponent> TreeCrowns;
 
     UPROPERTY(VisibleAnywhere, Category="World")
+    TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Bushes;
+
+    UPROPERTY(VisibleAnywhere, Category="World")
     TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Rocks;
 
     UPROPERTY(VisibleAnywhere, Category="World")
     TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Crystals;
+
+    UPROPERTY(VisibleAnywhere, Category="World")
+    TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Structures;
 
     UPROPERTY(VisibleAnywhere, Category="Lighting")
     TObjectPtr<UDirectionalLightComponent> SunLight;
@@ -75,16 +83,28 @@ protected:
     float TerrainAmplitude = 900.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation")
-    int32 TreeCount = 95;
+    int32 TreeCount = 260;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation")
-    int32 RockCount = 70;
+    int32 BushCount = 190;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation")
-    int32 CrystalCount = 28;
+    int32 RockCount = 110;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation")
-    int32 EnemyCount = 18;
+    int32 CrystalCount = 40;
+
+    UPROPERTY(EditDefaultsOnly, Category="Generation")
+    int32 AmbientEnemyCount = 26;
+
+    UPROPERTY(EditDefaultsOnly, Category="Settlements")
+    int32 CiviliansPerSettlement = 8;
+
+    UPROPERTY(EditDefaultsOnly, Category="Settlements")
+    int32 InvasionWaveSizePerSettlement = 10;
+
+    UPROPERTY(EditDefaultsOnly, Category="Settlements", meta=(ClampMin="15.0"))
+    float InvasionIntervalSeconds = 55.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="Evolution", meta=(ClampMin="30.0"))
     float EvolutionIntervalSeconds = 180.0f;
@@ -99,16 +119,28 @@ private:
     void BuildWorld();
     void BuildTerrain();
     void BuildDecorations();
-    void SpawnEnemies();
-    void ClearSpawnedEnemies();
+    void BuildSettlements();
+    void SpawnWorldActors();
+    void SpawnAmbientEnemies();
+    void SpawnSettlementsAndCivilians();
+    void SpawnInvasionWave();
+    void ClearSpawnedActors();
     void RelocatePlayersAfterEpoch();
 
     float SampleHeight(float X, float Y) const;
     FVector2D RandomGroundPoint(FRandomStream& Random, float HalfWorld, float MinimumCenterDistance) const;
+    TArray<FVector2D> GetSettlementCenters() const;
     int32 GetWorldSeed() const;
 
     UPROPERTY(Transient)
     TArray<TObjectPtr<ANWEnemy>> SpawnedEnemies;
 
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<ANWCivilian>> SpawnedCivilians;
+
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<ANWSettlementCore>> SpawnedSettlements;
+
     FTimerHandle EvolutionTimer;
+    FTimerHandle InvasionTimer;
 };
