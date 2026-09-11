@@ -62,6 +62,9 @@ protected:
     TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Crystals;
 
     UPROPERTY(VisibleAnywhere, Category="World")
+    TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Buildings;
+
+    UPROPERTY(VisibleAnywhere, Category="World")
     TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Structures;
 
     UPROPERTY(VisibleAnywhere, Category="PCG")
@@ -160,7 +163,7 @@ private:
     TArray<TObjectPtr<ANWSettlementCore>> SpawnedSettlements;
 
     bool bUsingRealisticTreeMesh = false;
-    bool bUsingRealisticStructureMesh = false;
+    bool bUsingRealisticBuildingMesh = false;
 
     FTimerHandle EvolutionTimer;
     FTimerHandle InvasionTimer;
