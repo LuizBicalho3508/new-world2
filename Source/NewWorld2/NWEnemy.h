@@ -25,31 +25,34 @@ protected:
     TObjectPtr<UStaticMeshComponent> BodyMesh;
 
     UPROPERTY(EditDefaultsOnly, Category="Combat")
-    float MaxHealth = 60.0f;
+    float MaxHealth = 70.0f;
 
     UPROPERTY(ReplicatedUsing=OnRep_Health, VisibleAnywhere, Category="Combat")
-    float Health = 60.0f;
+    float Health = 70.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="AI")
-    float MoveSpeed = 220.0f;
+    float MoveSpeed = 235.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="AI")
-    float DetectionRange = 1800.0f;
+    float PlayerAggroRange = 2100.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category="AI")
+    float WorldTargetRange = 9000.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="Combat")
-    float AttackRange = 165.0f;
+    float AttackRange = 175.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="Combat")
-    float AttackDamage = 8.0f;
+    float AttackDamage = 9.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="Combat")
-    float AttackCooldown = 1.25f;
+    float AttackCooldown = 1.15f;
 
     UFUNCTION()
     void OnRep_Health();
 
 private:
-    APawn* FindNearestPlayer() const;
+    AActor* FindBestTarget() const;
 
     float LastAttackTime = -1000.0f;
 };
