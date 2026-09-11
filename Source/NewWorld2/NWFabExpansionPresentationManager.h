@@ -14,6 +14,7 @@ class ANWWorldEventDirector;
 class UAnimBlueprint;
 class UAudioComponent;
 class UNiagaraSystem;
+class USceneComponent;
 class USkeletalMesh;
 class USoundBase;
 class UStaticMesh;
@@ -53,6 +54,9 @@ private:
     void HideEnemyFallbackMeshes(ANWEnemy* Enemy) const;
     bool TryLoadTerra(USkeletalMesh*& OutMesh, UClass*& OutAnimClass) const;
     TArray<FString> GetBiomeMusicKeywords(ENWBiomeType Biome) const;
+
+    UPROPERTY(VisibleAnywhere, Category="Fab|Presentation")
+    TObjectPtr<USceneComponent> ExpansionRoot;
 
     TArray<FAssetData> StaticMeshAssets;
     TArray<FAssetData> SkeletalMeshAssets;
