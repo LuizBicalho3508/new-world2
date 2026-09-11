@@ -284,12 +284,17 @@ Write-Host "  C             cura da arma"
 Write-Host "  1 / 2         selecionar armas"
 Write-Host "  F             troca rapida / combo cross-weapon"
 Write-Host "  Z / X         trocar familia das armas (debug)"
+Write-Host "  V             alternar flecha Fisica/Fogo/Veneno/Eletrica/Gelo"
 Write-Host "  G             coletar loot proximo"
-Write-Host "  I             abrir/fechar inventario"
-Write-Host "  Setas         selecionar item no inventario"
-Write-Host "  Enter         equipar item selecionado"
+Write-Host "  I             abrir/fechar bag sem limite"
+Write-Host "  Setas         selecionar item na bag"
+Write-Host "  Enter         equipar arma/armadura ou usar consumivel"
+Write-Host "  T             selecionar destino de fast travel"
+Write-Host "  Y             confirmar teleporte"
 Write-Host "  R             novo epoch do mundo"
 Write-Host ""
-Write-Host "HUD: vida, stamina, arma ativa, 3 habilidades e cooldowns." -ForegroundColor Green
-Write-Host "Drops agora aparecem fisicamente no mundo e entram na mochila somente ao coletar." -ForegroundColor Green
+Write-Host "HUD: vida, stamina, armas, 6 passivas, flecha elemental, destino, habilidades e cooldowns." -ForegroundColor Green
+Write-Host "Bag: armas agrupadas por familia, armaduras por classe/slot e consumiveis; painel rolavel." -ForegroundColor Green
+Write-Host "Mundo: zumbis, fantasmas, world bosses, dungeons e loot lendario." -ForegroundColor Green
+Write-Host "World bosses: 3 lendarios + Pocao da Armadura Brutal Lendaria garantida." -ForegroundColor Green
 Write-Host "Packs gratuitos instalados localmente sao detectados automaticamente sem serem enviados ao GitHub." -ForegroundColor Green
