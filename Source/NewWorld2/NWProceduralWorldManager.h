@@ -10,10 +10,13 @@ class ANWSettlementCore;
 class UDirectionalLightComponent;
 class UExponentialHeightFogComponent;
 class UHierarchicalInstancedStaticMeshComponent;
+class UPCGComponent;
+class UPCGGraphInterface;
 class UProceduralMeshComponent;
 class USceneComponent;
 class USkyAtmosphereComponent;
 class USkyLightComponent;
+class UStaticMesh;
 
 UCLASS()
 class NEWORLD2_API ANWProceduralWorldManager : public AActor
@@ -59,7 +62,22 @@ protected:
     TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Crystals;
 
     UPROPERTY(VisibleAnywhere, Category="World")
+    TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Buildings;
+
+    UPROPERTY(VisibleAnywhere, Category="World")
     TObjectPtr<UHierarchicalInstancedStaticMeshComponent> Structures;
+
+    UPROPERTY(VisibleAnywhere, Category="PCG")
+    TObjectPtr<UPCGComponent> RuntimePCG;
+
+    UPROPERTY(EditAnywhere, Category="PCG")
+    TSoftObjectPtr<UPCGGraphInterface> RuntimePCGGraph;
+
+    UPROPERTY(EditAnywhere, Category="PCG")
+    bool bEnableRuntimePartitionedPCG = true;
+
+    UPROPERTY(EditAnywhere, Category="Visual")
+    bool bAutoDiscoverInstalledFreeAssets = true;
 
     UPROPERTY(VisibleAnywhere, Category="Lighting")
     TObjectPtr<UDirectionalLightComponent> SunLight;
@@ -73,7 +91,7 @@ protected:
     UPROPERTY(VisibleAnywhere, Category="Lighting")
     TObjectPtr<UExponentialHeightFogComponent> HeightFog;
 
-    UPROPERTY(EditDefaultsOnly, Category="Generation", meta=(ClampMin="16", ClampMax="128"))
+    UPROPERTY(EditDefaultsOnly, Category="Generation", meta=(ClampMin="16", ClampMax="160"))
     int32 TerrainResolution = 64;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation", meta=(ClampMin="100.0", ClampMax="1000.0"))
@@ -126,6 +144,9 @@ private:
     void SpawnInvasionWave();
     void ClearSpawnedActors();
     void RelocatePlayersAfterEpoch();
+    void ConfigureRuntimePCG();
+    void TryApplyInstalledFreeWorldAssets();
+    UStaticMesh* FindInstalledStaticMesh(const TArray<FName>& Roots, const TArray<FString>& Keywords) const;
 
     float SampleHeight(float X, float Y) const;
     FVector2D RandomGroundPoint(FRandomStream& Random, float HalfWorld, float MinimumCenterDistance) const;
@@ -140,6 +161,9 @@ private:
 
     UPROPERTY(Transient)
     TArray<TObjectPtr<ANWSettlementCore>> SpawnedSettlements;
+
+    bool bUsingRealisticTreeMesh = false;
+    bool bUsingRealisticBuildingMesh = false;
 
     FTimerHandle EvolutionTimer;
     FTimerHandle InvasionTimer;

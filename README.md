@@ -2,31 +2,31 @@
 
 Codename de um action RPG 3D procedural em terceira pessoa, PvPvE, construido em Unreal Engine 5.8.
 
-> `New World 2` e um codename de desenvolvimento. O projeto nao reutiliza codigo, assets, historia, personagens, marcas ou conteudo de New World, Throne and Liberty ou qualquer outro jogo. Referencias servem apenas para direcao de genero/gameplay. Antes de publicacao comercial, o produto deve receber nome e identidade proprios.
+> `New World 2` e um codename de desenvolvimento. O projeto nao reutiliza codigo, historia, personagens, marcas ou identidade de New World, Throne and Liberty ou qualquer outro jogo. Referencias servem apenas para direcao de genero/gameplay. Antes de publicacao comercial, o produto deve receber nome e identidade proprios.
 
-## Objetivo
-
-Construir um action RPG PvPvE com combate por armas, troca de loadout, itens procedurais e um mundo que se transforma ao longo do tempo, mantendo uma base tecnicamente viavel para hardware desde GTX 1650 ate GPUs modernas.
-
-Principios atuais:
+## Direcao do projeto
 
 - sem level tradicional de personagem;
-- progressao horizontal por equipamento, sinergias e dominio do loadout;
-- 2 armas equipadas simultaneamente;
-- 3 habilidades diferentes para cada familia de arma;
-- 2 habilidades ofensivas + 1 habilidade de cura por arma;
-- combo entre as duas armas quando habilidades sao encadeadas dentro da janela de combo;
-- equipamentos com raridade e afixos procedurais;
-- efeitos condicionais de equipamento capazes de modificar o combate;
-- PvE e PvP previstos desde o nucleo;
-- terreno, recursos, inimigos, assentamentos e populacao derivados de seed/epoch;
-- invasoes de mobs contra cidades/NPCs;
-- servidor autoritativo para gameplay;
-- escalabilidade grafica e uso de instancing desde o prototipo.
+- progressao horizontal por equipamento, afixos, sinergias e dominio mecanico;
+- duas armas equipadas simultaneamente;
+- sete familias de arma, cada uma com ataque basico e tres habilidades;
+- cooldowns independentes por arma: 7 familias x 3 habilidades = 21 estados;
+- combo entre armas por troca de loadout;
+- PvE e PvP com servidor autoritativo;
+- loot, atributos, aparencia e sets derivados de seed;
+- armaduras leves, medias e pesadas com identidades mecanicas diferentes;
+- HUD, stamina, block, parry, dodge, stagger e hit reactions;
+- loot fisico, inventario e equipamentos;
+- cidades, civis, criaturas e invasoes;
+- castelos sombrios e cavernas procedurais com guardioes e drops lendarios;
+- seis biomas e seis estados climaticos;
+- ciclo dinamico de dia/noite;
+- VFX Niagara e SFX descobertos automaticamente entre os packs instalados;
+- World Partition + PCG runtime particionado preparados para streaming por celulas;
+- direcao visual realista com conteudo gratuito licenciado instalado localmente;
+- fallback completo para o repositorio continuar funcional sem redistribuir assets de terceiros.
 
-## Vertical slice atual
-
-### Combate
+## Combate
 
 Familias implementadas:
 
@@ -38,115 +38,159 @@ Familias implementadas:
 6. Arco;
 7. Arma de Fogo.
 
-Cada arma possui:
+Cada arma possui ataque basico, `Q` e `E` ofensivos e `C` de cura. O cooldown base fica proximo de 3 segundos. `F` troca rapidamente entre as duas armas e uma habilidade conectada pela segunda arma dentro da janela de 2,5 segundos recebe o bonus de combo do prototipo.
 
-- ataque basico proprio;
-- habilidade ofensiva 1 (`Q`);
-- habilidade ofensiva 2 (`E`);
-- habilidade de cura (`C`);
-- cooldown base proximo de 3 segundos;
-- alcance/raio/potencia especificos;
-- compatibilidade propria com efeitos especiais.
+Os cooldowns pertencem a cada familia. Usar `Q` da Greatsword nao coloca `Q` do Staff em cooldown.
 
-O personagem inicia com Espada Grande + Cajado. Para o prototipo, `Z` percorre as armas no slot 1 e `X` percorre as armas no slot 2, permitindo testar todas as familias antes de existir uma tela de inventario completa.
+### Defesa ativa
 
-### Combo entre armas
+- stamina;
+- block com botao direito;
+- janela curta de parry ao levantar a guarda;
+- parry perfeito anula dano e causa stagger;
+- guard break quando a stamina acaba;
+- dodge no `Alt esquerdo`;
+- i-frames na parte inicial da esquiva;
+- stagger por parry/golpes fortes;
+- hit reactions e montages quando assets compativeis estao instalados.
 
-Usar uma habilidade de uma arma, trocar para a outra e conectar outra habilidade dentro da janela de 2,5 segundos ativa multiplicador de combo. O prototipo usa +18% de dano no segundo golpe da sequencia.
+## VFX e audio
 
-### Equipamentos e drops procedurais
+`ANWWorldEventDirector` cataloga localmente os Niagara Systems e sons existentes em `/Game`.
 
-Mobs derrotados geram itens com:
+A apresentacao das habilidades procura efeitos por tema da arma:
 
-- seed propria;
-- slot de equipamento;
+- cajado: arcane, magic, lightning, fire, ice;
+- greatsword: sword, slash, impact, shockwave;
+- dual swords: blade, spin, wind, blood;
+- espada/escudo: shield, holy, guard, impact;
+- adagas: shadow, poison, blood, slash;
+- arco: arrow, projectile, wind, nature;
+- arma de fogo: muzzle, gun, fire, smoke, explosion;
+- cura: heal, holy, life, aura e buff.
+
+A mesma camada procura SFX equivalentes. Quanto mais packs compativeis forem instalados localmente, maior o repertorio visual/sonoro sem alterar o codigo de combate.
+
+Veja `docs/CONTENT_EXPANSION.md`.
+
+## HUD
+
+O HUD em C++/UMG mostra:
+
+- vida;
+- stamina;
+- armas dos slots 1/2;
+- arma ativa;
+- estado defensivo;
+- nomes de `Q/E/C`;
+- cooldown da arma ativa;
+- prompt de loot;
+- inventario/equipamento.
+
+## Inventario, armaduras e loot procedural
+
+Fluxo:
+
+`mob morre -> pickup no mundo -> G coleta -> mochila -> I abre inventario -> setas selecionam -> Enter equipa`.
+
+Cada armadura possui:
+
+- seed;
+- item level;
+- slot;
 - raridade;
-- de 1 a 3 afixos;
-- magnitudes procedurais.
+- classe de peso;
+- `AppearanceSeed`;
+- `StyleId`;
+- `SetId` quando pertence a um conjunto tematico;
+- afixos procedurais.
 
-Afixos iniciais:
+### Armadura leve
 
-- Poder;
-- Vitalidade;
-- Precisao;
-- Aceleracao;
-- Cura;
-- Revestimento Venenoso;
-- Roubo de Vida.
+Prioriza aceleracao, cura e esquiva. Estilos logicos incluem Arcanist, Shadowweave, Ranger, Duelist, Moonveil e Wanderer.
 
-O prototipo autoequipa um drop apenas quando sua pontuacao supera o item atual do mesmo slot. Inventario, pickup visual, comparador e descarte entram na proxima etapa.
+### Armadura media
 
-### Exemplo de sinergia: luvas venenosas
+Prioriza precisao e poder com perfil equilibrado. Estilos incluem Warden, Mercenary, Hunter, Battlemage, Corsair e Pathfinder.
 
-O personagem inicia com `Luvas do Alquimista - Prototipo`, contendo `Revestimento Venenoso`.
+### Armadura pesada
 
-Quando a arma ativa e compativel, ataques e habilidades aplicam dano adicional por veneno durante 3 ticks. Compatibilidade inicial:
+Prioriza armadura, vitalidade e guarda. Estilos incluem DreadKnight, RoyalGuard, IronVanguard, Dragonplate, Crusader e Obsidian.
 
-- Espada Grande;
-- Duas Espadas;
-- Espada e Escudo;
-- Adagas;
-- Arco.
+Afixos atuais incluem Poder, Vitalidade, Precisao, Aceleracao, Cura, Veneno, Roubo de Vida, Armadura, Fogo, Gelo, Corrente Eletrica, Eco de Habilidade, reducao de cooldown em critico, Guarda Fortificada, Parry Restaurador, Impulso da Esquiva, Sangramento e Executor.
 
-Cajado e arma de fogo nao recebem esse efeito, deixando a regra preparada para sinergias especificas de build em vez de bonus universais.
+## Dungeons e loot lendario
 
-### Mundo vivo
+### Castelo Sombrio
 
-O mundo atual gera por seed/epoch:
+`ANWDungeonSite` gera um complexo fortificado procedural e procura meshes instalados contendo termos como `Gothic`, `Castle`, `Fortress`, `Wall`, `Arch`, `Pillar`, `Statue`, `Gargoyle`, `Ruins` e `Gate`.
 
-- terreno procedural;
-- 260 arvores;
-- 190 arbustos;
-- 110 rochas;
-- 40 recursos/cristais;
-- 26 mobs ambientais;
-- 2 assentamentos;
-- casas, muralhas e torres instanciadas;
-- 8 civis por assentamento.
+Possui mobs e guardioes elite. Guardioes soltam 2 a 3 recompensas lendarias garantidas. O set `DarkCastle` favorece roubo de vida, execucao e eco de habilidade.
 
-A cada epoch o layout e regenerado deterministicamente para servidor/clientes.
+### Caverna Ancestral
 
-### Invasoes
+Gera varias camaras e procura assets como `Cave`, `Rock`, `Boulder`, `Cliff`, `Crystal`, `Stalag` e `Mushroom`.
 
-- primeira onda: ~20 segundos apos iniciar;
-- recorrencia: ~55 segundos;
-- 10 invasores por assentamento;
-- inimigos priorizam jogador dentro do raio de aggro;
-- fora disso continuam atacando civis e o nucleo da cidade;
-- se o nucleo for rompido, ele e restaurado no prototipo para o teste continuar.
+Tambem possui mobs/guardioes e loot lendario `AncientCave`, com afinidades como gelo, corrente eletrica e vitalidade conforme compatibilidade de slot.
 
-## Visual
+Tipo, seed e tier da dungeon sao replicados para que servidor e clientes reconstruam a mesma estrutura.
 
-A arquitetura esta sendo preparada para uma direcao realista, com:
+## Biomas, clima e dia/noite
 
-- vegetacao densa;
-- cidades e estruturas;
-- NPCs e populacao;
-- criaturas em grande quantidade;
-- materiais/iluminacao escalaveis;
-- LOD/HISM/streaming como requisitos de performance.
+Biomas iniciais:
 
-A arte do vertical slice ainda usa primitivas internas da Unreal propositalmente. O passo seguinte e substituir os placeholders por assets gratuitos licenciados, personagens animados, foliage realista, materiais de terreno e VFX sem comprometer a meta de hardware.
+- Floresta Temperada;
+- Deserto;
+- Neve;
+- Pantano;
+- Vulcanico;
+- Amaldicoado.
 
-## Requisitos Windows
+Clima:
 
-- Windows 10/11 64-bit;
-- Unreal Engine 5.8 instalada pelo Epic Games Launcher;
-- Visual Studio com toolchain C++ compativel;
-- Git;
-- GPU DirectX 12 recomendada.
+- Ceu Limpo;
+- Chuva;
+- Tempestade;
+- Nevasca;
+- Tempestade de Areia;
+- Neblina Densa.
 
-## Executar
+O ciclo completo de 24 horas dura inicialmente 12 minutos de playtest. Direcional, skylight e fog sao atualizados dinamicamente. Biomas tambem adaptam o clima local, como chuva global virando nevasca em regiao de neve ou tempestade de areia no deserto.
+
+## Mundo procedural / streaming
+
+O mundo ainda usa o gerador C++ como fallback, com terreno, foliage, recursos, assentamentos, civis, mobs e invasoes. O `ANWProceduralWorldManager` possui `UPCGComponent` em runtime/particionado e seed derivada do epoch.
+
+`scripts/prepare-worldpartition.ps1` prepara localmente `/Game/GeneratedWorld/NW2_OpenWorld` via `WorldPartitionConvertCommandlet`. Os binarios/External Actors gerados ficam fora do Git.
+
+## Conteudo externo
+
+O projeto detecta/usa packs instalados localmente, incluindo os packs Paragon e ambientes previamente selecionados. O repositorio nunca redistribui esses arquivos.
+
+Documentacao:
+
+- `docs/REALISTIC_ASSETS.md`;
+- `docs/CONTENT_EXPANSION.md`;
+- `docs/COMBAT_INVENTORY.md`;
+- `docs/WORLD_PARTITION_PCG.md`.
+
+## Executar no Windows
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass -Force
 & .\scripts\clone-build-run.ps1
 ```
 
-Para informar a UE 5.8 manualmente:
+Informando a UE 5.8 manualmente:
 
 ```powershell
 & .\scripts\clone-build-run.ps1 -UERoot "D:\Epic Games\UE_5.8"
+```
+
+Sem preparar World Partition:
+
+```powershell
+& .\scripts\clone-build-run.ps1 -SkipWorldPartition
 ```
 
 ## Controles
@@ -157,16 +201,20 @@ Para informar a UE 5.8 manualmente:
 | Mouse | camera |
 | Espaco | pular |
 | Shift | correr |
-| Mouse esquerdo | ataque basico da arma atual |
+| Mouse esquerdo | ataque basico |
+| Mouse direito | bloquear / janela de parry |
+| Alt esquerdo | dodge |
 | Q | habilidade ofensiva 1 |
 | E | habilidade ofensiva 2 |
 | C | habilidade de cura |
-| 1 | selecionar arma do slot 1 |
-| 2 | selecionar arma do slot 2 |
-| F | alternar rapidamente entre as duas armas |
-| Z | trocar a familia da arma do slot 1 (debug) |
-| X | trocar a familia da arma do slot 2 (debug) |
-| R | gerar um novo epoch imediatamente |
+| 1 / 2 | selecionar armas |
+| F | troca rapida / combo cross-weapon |
+| Z / X | trocar familia das armas (debug) |
+| G | coletar loot |
+| I | inventario |
+| Seta cima/baixo | selecionar item |
+| Enter | equipar item |
+| R | novo epoch |
 
 ## Arquitetura relevante
 
@@ -174,25 +222,25 @@ Para informar a UE 5.8 manualmente:
 Source/NewWorld2/
 ├─ NWCombatTypes.h
 ├─ NWCombatLibrary.cpp/.h
+├─ NWCombatHUDWidget.cpp/.h
+├─ NWLootPickup.cpp/.h
 ├─ NWCharacter.cpp/.h
 ├─ NWEnemy.cpp/.h
+├─ NWDungeonGuardian.cpp/.h
+├─ NWDungeonSite.cpp/.h
+├─ NWWorldTypes.h
+├─ NWWorldEventDirector.cpp/.h
+├─ NWProceduralWorldManager.cpp/.h
 ├─ NWCivilian.cpp/.h
 ├─ NWSettlementCore.cpp/.h
-├─ NWProceduralWorldManager.cpp/.h
+├─ PCGGraphInterface.h
 └─ NWGameMode.cpp/.h
 ```
 
-## Proximas etapas
+## Validacao
 
-1. HUD de habilidades/cooldowns/vida/arma ativa;
-2. animacoes reais, dodge, block, parry, stagger e hit reactions;
-3. inventario e loot visual no mundo;
-4. mais afixos e efeitos que alterem habilidades;
-5. personagens, foliage, construcoes e criaturas realistas usando conteudo gratuito licenciado;
-6. streaming/World Partition/PCG por celulas;
-7. perfis graficos e profiling em GTX 1650;
-8. multiplayer dedicado e persistencia.
+O repositorio nao possui runner com Unreal Engine 5.8, portanto a revisao remota e estrutural/API. A compilacao definitiva acontece pelo UnrealBuildTool no Windows no primeiro `clone-build-run.ps1`; o script nao inicia o jogo se o build C++ falhar.
 
 ## Licenca
 
-O codigo proprio deste repositorio segue a licenca presente em `LICENSE`. Assets de terceiros mantem suas respectivas licencas e nao passam automaticamente a ser MIT por estarem usados no projeto.
+O codigo proprio segue `LICENSE`. Conteudo de terceiros mantem suas licencas e nao deve ser republicado isoladamente no repositorio.

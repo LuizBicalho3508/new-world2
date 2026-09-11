@@ -1,7 +1,10 @@
 #include "NWCivilian.h"
 
+#include "Animation/AnimInstance.h"
 #include "Components/CapsuleComponent.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "Net/UnrealNetwork.h"
 #include "UObject/ConstructorHelpers.h"
@@ -30,6 +33,20 @@ ANWCivilian::ANWCivilian()
 void ANWCivilian::BeginPlay()
 {
     Super::BeginPlay();
+
+    USkeletalMesh* LicensedMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/ParagonSparrow/Characters/Heroes/Sparrow/Meshes/Sparrow.Sparrow"));
+    UClass* LicensedAnimClass = LoadClass<UAnimInstance>(nullptr, TEXT("/Game/ParagonSparrow/Characters/Heroes/Sparrow/Sparrow_AnimBlueprint.Sparrow_AnimBlueprint_C"));
+    if (LicensedMesh && LicensedAnimClass)
+    {
+        GetMesh()->SetSkeletalMeshAsset(LicensedMesh);
+        GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+        GetMesh()->SetAnimInstanceClass(LicensedAnimClass);
+        GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -86.0f));
+        GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
+        GetMesh()->SetVisibility(true, true);
+        BodyMesh->SetVisibility(false, true);
+    }
+
     if (HasAuthority())
     {
         Health = MaxHealth;

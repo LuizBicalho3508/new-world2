@@ -12,7 +12,13 @@ public class NewWorld2 : ModuleRules
             "CoreUObject",
             "Engine",
             "InputCore",
-            "ProceduralMeshComponent"
+            "ProceduralMeshComponent",
+            "UMG",
+            "AssetRegistry",
+            "PCG",
+            "NavigationSystem",
+            "AIModule",
+            "Niagara"
         });
 
         PrivateDependencyModuleNames.AddRange(new string[]

@@ -5,6 +5,7 @@
 #include "GameFramework/Controller.h"
 #include "NWCharacter.h"
 #include "NWProceduralWorldManager.h"
+#include "NWWorldEventDirector.h"
 
 ANWGameMode::ANWGameMode()
 {
@@ -14,6 +15,24 @@ ANWGameMode::ANWGameMode()
 void ANWGameMode::StartPlay()
 {
     EnsureWorldManager();
+
+    if (GetWorld())
+    {
+        bool bHasDirector = false;
+        for (TActorIterator<ANWWorldEventDirector> It(GetWorld()); It; ++It)
+        {
+            bHasDirector = true;
+            break;
+        }
+
+        if (!bHasDirector)
+        {
+            FActorSpawnParameters Params;
+            Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+            GetWorld()->SpawnActor<ANWWorldEventDirector>(ANWWorldEventDirector::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+        }
+    }
+
     Super::StartPlay();
 }
 

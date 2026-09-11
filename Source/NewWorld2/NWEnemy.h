@@ -18,6 +18,11 @@ public:
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
+    void ApplyStagger(float DurationSeconds);
+
+    UFUNCTION(BlueprintPure, Category="Combat")
+    float GetHealthRatio() const { return MaxHealth > 0.0f ? Health / MaxHealth : 0.0f; }
+
 protected:
     virtual void BeginPlay() override;
 
@@ -53,6 +58,9 @@ protected:
 
 private:
     AActor* FindBestTarget() const;
+    void SpawnProceduralLoot(AController* EventInstigator, AActor* DamageCauser);
+    void TryApplyLicensedCreatureVisual();
 
     float LastAttackTime = -1000.0f;
+    float StaggeredUntilTime = -1000.0f;
 };

@@ -1,107 +1,141 @@
 # New World 2 - Roadmap
 
-## Fase 0 - Vertical slice tecnico
+## Estado atual - vertical slice integrado
 
-Status: em andamento.
+Status: aguardando primeira compilacao/teste local em uma maquina com Unreal Engine 5.8.
+
+Ja implementado em codigo:
 
 - [x] projeto Unreal Engine 5.8 em C++;
-- [x] personagem terceira pessoa;
-- [x] movimento, pulo e sprint;
-- [x] ataque basico;
-- [x] habilidade universal independente de arma;
-- [x] vida/dano replicados;
-- [x] mob PvE basico;
-- [x] terreno procedural deterministico;
-- [x] arvores, rochas e recursos por seed;
-- [x] world epoch automatico;
-- [x] regeneracao manual para teste;
-- [x] configuracao inicial de performance;
-- [x] bootstrap Windows clone/build/run;
-- [ ] teste compilado em maquina com UE 5.8 instalada;
-- [ ] HUD minimo de vida/cooldown/epoch;
-- [ ] animacao de placeholder gratuita;
+- [x] personagem terceira pessoa, movimento, pulo e sprint;
+- [x] 7 familias de arma;
+- [x] 3 habilidades por arma;
+- [x] dois slots e combo cross-weapon;
+- [x] vida/dano/armas/equipamentos replicados;
+- [x] HUD nativo de vida, stamina, arma e cooldowns;
+- [x] block, parry, dodge, i-frames, guard break e stagger;
+- [x] hit reactions/montages quando pack visual compativel esta instalado;
+- [x] inventario visual;
+- [x] loot fisico/replicado no mundo;
+- [x] raridade, item level e 18 tipos de afixo procedural;
+- [x] afixos que alteram mecanica de combate;
+- [x] mobs ambientais;
+- [x] dois assentamentos, civis e invasoes;
+- [x] terreno/vegetacao/recursos por seed/epoch;
+- [x] auto-deteccao de personagem/criatura/foliage/construcao gratuitos instalados localmente;
+- [x] componente PCG em GenerateAtRuntime/partitioned;
+- [x] preparador local de mapa World Partition;
+- [x] bootstrap Windows clone/build/World Partition/run;
+- [ ] primeira compilacao real no Windows com UE 5.8;
+- [ ] primeiro playtest completo;
 
-## Fase 1 - Combate realmente divertido
+## Proxima fase - estabilizacao do combate
 
-- locomocao com animacao;
-- dodge/esquiva;
-- stamina somente se melhorar o combate;
-- hit reactions;
+Depois do primeiro build integrado:
+
+- corrigir qualquer warning/erro real de toolchain;
+- ajustar tempos de ataque, block, parry e dodge por sensacao de jogo;
 - ataques leve/pesado;
-- bloqueio/parry;
-- targeting opcional;
-- 4-6 habilidades de loadout sem dependencia de arma;
-- migracao para Gameplay Ability System;
-- primeiro boss procedural simples.
+- animation notifies para sincronizar hit frames com os montages;
+- animacoes especificas por cada familia de arma;
+- targeting/lock-on opcional;
+- VFX/SFX por tipo de dano;
+- primeiro boss com fases e ataques telegrafados;
+- avaliar migracao das habilidades para Gameplay Ability System sem quebrar o modelo atual.
 
-Criterio para avancar: jogar 20-30 minutos ainda precisa ser divertido sem progressao por level.
+Criterio para avancar: o combate precisa sustentar uma sessao de 20-30 minutos mesmo sem level tradicional.
 
-## Fase 2 - Mundo procedural por celulas
+## Mundo procedural e streaming
 
-- World Partition;
-- PCG runtime/hierarquico;
-- biomas por regras;
-- rios/caminhos/pontos de interesse;
-- recursos com respawn e migracao;
-- eventos dinamicos;
-- epochs separados em micro/meso/macro;
-- streaming assincromo;
-- seeds persistidas no servidor.
+Infraestrutura pronta:
 
-## Fase 3 - Itens e crafting generativos
+- World Partition convertido localmente;
+- PCG runtime particionado;
+- gerador C++ fallback;
+- seed por WorldEpoch;
+- foliage/estruturas instanciadas.
 
-- archetypes;
-- materiais;
-- afixos validos por regra;
-- crafting;
-- economia inicial;
+Proximos passos:
+
+- autorar o primeiro grafo PCG binario no Editor;
+- hierarchical generation com grids por categoria;
+- biomas por altura/umidade/temperatura;
+- rios e caminhos;
+- POIs/ruinas/cavernas;
+- recursos com migracao/respawn;
+- separar epochs em micro/meso/macro;
+- Data Layers para estados de cidades/eventos;
+- HLOD por categoria;
+- streaming sources para eventos longe dos jogadores.
+
+## Itens, crafting e economia
+
+Ja existe:
+
 - inventario;
-- equipamentos;
-- geracao deterministica auditavel;
-- nenhuma progressao numerica infinita.
+- slots equipaveis;
+- drops procedurais;
+- raridade;
+- afixos;
+- item level derivado do estado do mundo;
+- efeitos mecanicos.
 
-## Fase 4 - Multiplayer PvPvE
+Ainda falta:
+
+- armas como itens reais de inventario;
+- crafting por materiais/propriedades;
+- sockets/runes;
+- sets com bonus 2/3/5 pecas;
+- comparador visual completo;
+- descarte/desmontagem;
+- economia local ligada aos assentamentos;
+- persistencia/auditoria de seeds no servidor.
+
+## Multiplayer PvPvE
 
 - listen server 2-8 jogadores;
-- PvP com regras basicas;
+- regras de PvP;
 - grupos;
-- respawn;
 - objetivos de mapa;
 - Dedicated Server Linux;
-- Replication Graph;
+- Replication Graph/Iris conforme profiling;
 - testes de latencia/perda de pacote;
-- 16, 32 e depois 64 jogadores por instancia conforme profiling.
+- escalar 16, 32 e depois 64 jogadores por instancia somente apos medicao.
 
-## Fase 5 - Arte de alta qualidade
+## Arte de alta qualidade
 
-Somente depois do gameplay estar validado:
+O pipeline agora aceita conteudo gratuito licenciado localmente sem versionar assets de terceiros.
 
-- pipeline Fab/Quixel/Epic gratuito;
-- personagem final;
-- animacoes;
-- materiais de terreno;
-- vegetacao;
-- VFX Niagara;
+Proximos passos visuais:
+
+- retarget/normalizacao de skeleton final;
+- personagens finais proprios ou licenciados adequadamente;
+- animations por arma;
+- material de terreno realista;
+- foliage com variacao/LOD/Nanite onde fizer sentido;
+- construcoes modulares completas;
+- mais especies de criaturas;
+- Niagara;
 - audio;
-- clima;
-- presets graficos completos;
-- otimizar continuamente para GTX 1650.
+- clima/dia-noite;
+- perfis graficos completos.
 
-## Fase 6 - Persistencia e produto
+Meta de performance permanece: o jogo deve continuar ajustavel para GTX 1650 sem impedir qualidade superior em GPUs modernas.
 
-- conta;
+## Persistencia e produto
+
+- contas;
 - personagem;
-- inventario;
+- inventario persistente;
 - economia;
 - shards/sessoes;
 - logs/telemetria;
 - seguranca/anti-cheat;
-- launcher/update somente se realmente necessario;
 - build distribuivel para playtest externo.
 
 ## Regra de escopo
 
-Nao construir MMO, historia completa ou centenas de assets antes de provar quatro coisas:
+Nao construir historia completa ou infraestrutura de MMO massiva antes de provar quatro coisas:
 
 1. combate divertido;
 2. mundo procedural interessante;
