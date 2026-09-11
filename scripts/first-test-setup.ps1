@@ -153,8 +153,8 @@ function Sync-Repository {
     if (-not (Test-Path $parent)) { New-Item -ItemType Directory -Force -Path $parent | Out-Null }
 
     if (Test-Path (Join-Path $Destination ".git")) {
-        $dirty = (& git.exe -C $Destination status --porcelain) -join "`n"
-        if ($dirty) { throw "Ha alteracoes locais em $Destination. Commit/stash antes de atualizar." }
+        $dirtyTracked = (& git.exe -C $Destination status --porcelain --untracked-files=no) -join "`n"
+        if ($dirtyTracked) { throw "Ha alteracoes locais em arquivos versionados em $Destination. Commit/stash antes de atualizar." }
         & git.exe -C $Destination fetch origin
         if ($LASTEXITCODE -ne 0) { throw "git fetch falhou." }
         & git.exe -C $Destination checkout main
@@ -240,9 +240,24 @@ $args = @(
 )
 if ($SkipWorldPartition) { $args += "-SkipWorldPartition" }
 
-& powershell.exe @args
-if ($LASTEXITCODE -ne 0) {
-    throw "Build/teste falhou com codigo $LASTEXITCODE. Copie o erro completo desta janela para o ChatGPT."
+$hadShowUntracked = $false
+$oldShowUntracked = $null
+try {
+    $oldShowUntracked = (& git.exe -C $Destination config --local --get status.showUntrackedFiles 2>$null | Select-Object -First 1)
+    $hadShowUntracked = -not [string]::IsNullOrWhiteSpace([string]$oldShowUntracked)
+    & git.exe -C $Destination config --local status.showUntrackedFiles no
+
+    & powershell.exe @args
+    if ($LASTEXITCODE -ne 0) {
+        throw "Build/teste falhou com codigo $LASTEXITCODE. Copie o erro completo desta janela para o ChatGPT."
+    }
+}
+finally {
+    if ($hadShowUntracked) {
+        & git.exe -C $Destination config --local status.showUntrackedFiles $oldShowUntracked
+    } else {
+        & git.exe -C $Destination config --local --unset status.showUntrackedFiles 2>$null
+    }
 }
 
 Write-Section "6/6 - PRONTO"
