@@ -14,6 +14,7 @@
 #include "NiagaraSystem.h"
 #include "NWCharacter.h"
 #include "NWDungeonSite.h"
+#include "NWEnemy.h"
 #include "NWProceduralWorldManager.h"
 #include "Sound/SoundBase.h"
 #include "TimerManager.h"
@@ -25,6 +26,21 @@ ANWWorldEventDirector::ANWWorldEventDirector()
     bReplicates = true;
     SetReplicateMovement(false);
     NetUpdateFrequency = 2.0f;
+
+    FastTravelNames = {
+        TEXT("Refugio Central"),
+        TEXT("Portao do Castelo Sombrio"),
+        TEXT("Entrada da Caverna Ancestral"),
+        TEXT("Fronteira Norte"),
+        TEXT("Fronteira Sul")
+    };
+    FastTravelLocations = {
+        FVector(0.0f, 0.0f, 0.0f),
+        FVector(-6500.0f, -5400.0f, 0.0f),
+        FVector(6450.0f, 5450.0f, 0.0f),
+        FVector(0.0f, 7600.0f, 0.0f),
+        FVector(0.0f, -7600.0f, 0.0f)
+    };
 }
 
 void ANWWorldEventDirector::BeginPlay()
@@ -36,7 +52,10 @@ void ANWWorldEventDirector::BeginPlay()
     if (HasAuthority())
     {
         SpawnWorldDungeons();
+        SpawnRoamingUndead();
+        MaintainWorldBosses();
         GetWorldTimerManager().SetTimer(WeatherTimer, this, &ANWWorldEventDirector::ChangeWeather, WeatherChangeIntervalSeconds, true, WeatherChangeIntervalSeconds);
+        GetWorldTimerManager().SetTimer(BossMaintenanceTimer, this, &ANWWorldEventDirector::MaintainWorldBosses, 90.0f, true, 90.0f);
     }
 }
 
@@ -44,10 +63,7 @@ void ANWWorldEventDirector::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
 
-    if (HasAuthority())
-    {
-        UpdateDayNight(DeltaSeconds);
-    }
+    if (HasAuthority()) { UpdateDayNight(DeltaSeconds); }
 
     EnvironmentAccumulator += DeltaSeconds;
     WeatherFxAccumulator += DeltaSeconds;
@@ -65,6 +81,21 @@ void ANWWorldEventDirector::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     DOREPLIFETIME(ANWWorldEventDirector, WorldTimeHours);
     DOREPLIFETIME(ANWWorldEventDirector, CurrentWeather);
+}
+
+FString ANWWorldEventDirector::GetFastTravelDestinationName(int32 Index) const
+{
+    return FastTravelNames.IsValidIndex(Index) ? FastTravelNames[Index] : FString(TEXT("Destino invalido"));
+}
+
+FVector ANWWorldEventDirector::GetFastTravelDestinationLocation(int32 Index) const
+{
+    return FastTravelLocations.IsValidIndex(Index) ? FastTravelLocations[Index] : FVector::ZeroVector;
+}
+
+bool ANWWorldEventDirector::IsValidFastTravelDestination(int32 Index) const
+{
+    return FastTravelNames.IsValidIndex(Index) && FastTravelLocations.IsValidIndex(Index);
 }
 
 void ANWWorldEventDirector::DiscoverPresentationAssets()
@@ -240,13 +271,16 @@ void ANWWorldEventDirector::DetectAbilityUse(ANWCharacter* Character)
 {
     if (!Character) { return; }
 
+    const ENWWeaponType ActiveWeapon = Character->GetActiveWeapon();
+    ENWWeaponType* PreviousWeapon = PreviousWeapons.Find(Character);
     TArray<float>* Previous = PreviousAbilityCooldowns.Find(Character);
-    if (!Previous)
+    if (!Previous || !PreviousWeapon || *PreviousWeapon != ActiveWeapon)
     {
         TArray<float> Initial;
         Initial.SetNumZeroed(3);
         for (int32 Index = 0; Index < 3; ++Index) { Initial[Index] = Character->GetAbilityCooldownRemaining(Index); }
         PreviousAbilityCooldowns.Add(Character, Initial);
+        PreviousWeapons.Add(Character, ActiveWeapon);
         return;
     }
 
@@ -295,7 +329,20 @@ void ANWWorldEventDirector::PlayAbilityPresentation(ANWCharacter* Character, int
 {
     if (!Character) { return; }
 
-    const TArray<FString> Keywords = GetAbilityKeywords(Character->GetActiveWeapon(), AbilityIndex);
+    TArray<FString> Keywords = GetAbilityKeywords(Character->GetActiveWeapon(), AbilityIndex);
+    if (Character->GetActiveWeapon() == ENWWeaponType::Bow)
+    {
+        Keywords.Add(Character->GetArrowElementLabel());
+        switch (Character->GetArrowElement())
+        {
+            case ENWArrowElement::Fire: Keywords.Add(TEXT("Fire")); Keywords.Add(TEXT("Flame")); break;
+            case ENWArrowElement::Poison: Keywords.Add(TEXT("Poison")); Keywords.Add(TEXT("Venom")); break;
+            case ENWArrowElement::Lightning: Keywords.Add(TEXT("Lightning")); Keywords.Add(TEXT("Electric")); break;
+            case ENWArrowElement::Frost: Keywords.Add(TEXT("Frost")); Keywords.Add(TEXT("Ice")); break;
+            default: break;
+        }
+    }
+
     const FNWWeaponDefinition WeaponDef = NWCombat::GetWeaponDefinition(Character->GetActiveWeapon());
     const bool bArea = WeaponDef.Abilities.IsValidIndex(AbilityIndex) && WeaponDef.Abilities[AbilityIndex].Kind == ENWAbilityKind::AreaDamage;
 
@@ -420,6 +467,74 @@ void ANWWorldEventDirector::SpawnWorldDungeons()
             Site->ConfigureDungeon(Spawn.Type, Spawn.Seed, Spawn.Tier);
             DungeonSites.Add(Site);
         }
+    }
+}
+
+void ANWWorldEventDirector::SpawnRoamingUndead()
+{
+    if (!HasAuthority() || !GetWorld()) { return; }
+
+    ANWProceduralWorldManager* WorldManager = nullptr;
+    for (TActorIterator<ANWProceduralWorldManager> It(GetWorld()); It; ++It) { WorldManager = *It; break; }
+
+    FRandomStream Random(0x5A17 + FMath::RoundToInt(WorldTimeHours * 100.0f));
+    FActorSpawnParameters Params;
+    Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+
+    for (int32 Index = 0; Index < 30; ++Index)
+    {
+        const ENWEnemyArchetype Archetype = Index < 18 ? ENWEnemyArchetype::Zombie : ENWEnemyArchetype::Ghost;
+        const float Angle = Random.FRandRange(0.0f, 2.0f * PI);
+        const float Radius = Random.FRandRange(3400.0f, 8500.0f);
+        const float X = FMath::Cos(Angle) * Radius;
+        const float Y = FMath::Sin(Angle) * Radius;
+        const float Z = WorldManager ? WorldManager->GetTerrainHeightAt(X, Y) : 0.0f;
+        ANWEnemy* Enemy = GetWorld()->SpawnActor<ANWEnemy>(ANWEnemy::StaticClass(), FVector(X, Y, Z + 130.0f), FRotator(0.0f, Random.FRandRange(0.0f, 360.0f), 0.0f), Params);
+        if (Enemy)
+        {
+            Enemy->ConfigureEnemy(Archetype, false, 1);
+            RoamingEnemies.Add(Enemy);
+        }
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("[MOBS] %d zumbis/fantasmas adicionais espalhados pelo mapa."), RoamingEnemies.Num());
+}
+
+void ANWWorldEventDirector::MaintainWorldBosses()
+{
+    if (!HasAuthority()) { return; }
+    WorldBosses.RemoveAll([](const TObjectPtr<ANWEnemy>& Enemy) { return !IsValid(Enemy); });
+    while (WorldBosses.Num() < DesiredWorldBossCount)
+    {
+        SpawnOneWorldBoss();
+    }
+}
+
+void ANWWorldEventDirector::SpawnOneWorldBoss()
+{
+    if (!GetWorld()) { return; }
+
+    ANWProceduralWorldManager* WorldManager = nullptr;
+    for (TActorIterator<ANWProceduralWorldManager> It(GetWorld()); It; ++It) { WorldManager = *It; break; }
+
+    const int32 Seed = FMath::RoundToInt(GetWorld()->GetTimeSeconds() * 100.0f) + WorldBosses.Num() * 7919 + 771;
+    FRandomStream Random(Seed);
+    const float Angle = Random.FRandRange(0.0f, 2.0f * PI);
+    const float Radius = Random.FRandRange(5200.0f, 8600.0f);
+    const float X = FMath::Cos(Angle) * Radius;
+    const float Y = FMath::Sin(Angle) * Radius;
+    const float Z = WorldManager ? WorldManager->GetTerrainHeightAt(X, Y) : 0.0f;
+    const ENWEnemyArchetype Archetype = static_cast<ENWEnemyArchetype>(Random.RandRange(0, 2));
+    const int32 Tier = Random.RandRange(2, 4);
+
+    FActorSpawnParameters Params;
+    Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+    ANWEnemy* Boss = GetWorld()->SpawnActor<ANWEnemy>(ANWEnemy::StaticClass(), FVector(X, Y, Z + 160.0f), FRotator(0.0f, Random.FRandRange(0.0f, 360.0f), 0.0f), Params);
+    if (Boss)
+    {
+        Boss->ConfigureEnemy(Archetype, true, Tier);
+        WorldBosses.Add(Boss);
+        UE_LOG(LogTemp, Warning, TEXT("[WORLD BOSS] novo boss tier %d surgiu em %.0f, %.0f."), Tier, X, Y);
     }
 }
 

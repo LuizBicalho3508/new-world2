@@ -42,6 +42,12 @@ public:
     FString GetActiveWeaponName() const;
 
     UFUNCTION(BlueprintPure, Category="Combat")
+    ENWArrowElement GetArrowElement() const { return ActiveArrowElement; }
+
+    UFUNCTION(BlueprintPure, Category="Combat")
+    FString GetArrowElementLabel() const;
+
+    UFUNCTION(BlueprintPure, Category="Combat")
     float GetHealth() const { return Health; }
 
     UFUNCTION(BlueprintPure, Category="Combat")
@@ -62,6 +68,9 @@ public:
     UFUNCTION(BlueprintPure, Category="Equipment")
     TArray<FNWGeneratedItem> GetEquippedItems() const { return EquippedItems; }
 
+    UFUNCTION(BlueprintPure, Category="Equipment")
+    TArray<FNWGeneratedItem> GetEquippedWeaponItems() const { return EquippedWeaponItems; }
+
     UFUNCTION(BlueprintPure, Category="Inventory")
     TArray<FNWGeneratedItem> GetInventoryItems() const { return InventoryItems; }
 
@@ -70,6 +79,15 @@ public:
 
     UFUNCTION(BlueprintPure, Category="Inventory")
     FString GetNearbyLootLabel() const;
+
+    UFUNCTION(BlueprintPure, Category="Travel")
+    FString GetSelectedFastTravelLabel() const;
+
+    UFUNCTION(BlueprintPure, Category="Equipment")
+    bool IsBrutalTransformationActive() const { return bBrutalTransformationActive; }
+
+    UFUNCTION(BlueprintPure, Category="Equipment")
+    float GetBrutalTransformationRemaining() const;
 
 protected:
     virtual void BeginPlay() override;
@@ -111,6 +129,9 @@ protected:
     ENWWeaponType ActiveWeapon = ENWWeaponType::Greatsword;
 
     UPROPERTY(Replicated, VisibleAnywhere, Category="Combat")
+    ENWArrowElement ActiveArrowElement = ENWArrowElement::Physical;
+
+    UPROPERTY(Replicated, VisibleAnywhere, Category="Combat")
     ENWCombatState CombatState = ENWCombatState::Normal;
 
     UPROPERTY(EditDefaultsOnly, Category="Combat")
@@ -122,11 +143,17 @@ protected:
     UPROPERTY(ReplicatedUsing=OnRep_Equipment, VisibleAnywhere, Category="Equipment")
     TArray<FNWGeneratedItem> EquippedItems;
 
+    UPROPERTY(ReplicatedUsing=OnRep_Equipment, VisibleAnywhere, Category="Equipment")
+    TArray<FNWGeneratedItem> EquippedWeaponItems;
+
     UPROPERTY(ReplicatedUsing=OnRep_Inventory, VisibleAnywhere, Category="Inventory")
     TArray<FNWGeneratedItem> InventoryItems;
 
     UPROPERTY(Replicated, VisibleAnywhere, Category="Combat")
     TArray<float> AbilityReadyTimes;
+
+    UPROPERTY(ReplicatedUsing=OnRep_BrutalTransformation, VisibleAnywhere, Category="Equipment")
+    bool bBrutalTransformationActive = false;
 
     UFUNCTION()
     void OnRep_Health();
@@ -139,6 +166,9 @@ protected:
 
     UFUNCTION()
     void OnRep_Inventory();
+
+    UFUNCTION()
+    void OnRep_BrutalTransformation();
 
     UFUNCTION(Server, Reliable)
     void ServerAttack();
@@ -170,6 +200,12 @@ protected:
     UFUNCTION(Server, Reliable)
     void ServerEquipInventoryItem(int32 ItemSeed);
 
+    UFUNCTION(Server, Reliable)
+    void ServerCycleArrowElement();
+
+    UFUNCTION(Server, Reliable)
+    void ServerFastTravel(int32 DestinationIndex);
+
     UFUNCTION(NetMulticast, Unreliable)
     void MulticastPlayCombatAnimation(uint8 ActionCode);
 
@@ -198,6 +234,9 @@ private:
     void InventoryPrevious();
     void InventoryNext();
     void EquipSelectedInventoryItem();
+    void CycleArrowElement();
+    void CycleFastTravelDestination();
+    void ConfirmFastTravel();
 
     void ExecuteAttack();
     void ExecuteAbility(uint8 AbilityIndex);
@@ -208,13 +247,20 @@ private:
     void ApplySprintState(bool bSprinting);
     void ApplyWeaponDamage(AActor* Target, float BaseDamage, bool bAllowStatusEffects, bool bFromAbility = false);
     void ApplyStatusDamage(AActor* Target, float DamagePerTick, int32 Ticks, float IntervalSeconds);
-    void ApplyShockChain(AActor* PrimaryTarget, float BaseDamage);
-    void ApplyFrostbite(AActor* Target);
+    void ApplyShockChain(AActor* PrimaryTarget, float BaseDamage, float OverrideMultiplier = 0.0f);
+    void ApplyFrostbite(AActor* Target, float MinimumMagnitude = 0.0f);
+    void ApplyElementalArrow(AActor* Target, float Damage);
     float GetTargetHealthRatio(AActor* Target) const;
 
     void EquipInventoryItemBySeed(int32 ItemSeed);
+    void EquipWeaponItem(const FNWGeneratedItem& NewItem);
+    void ConsumeItem(const FNWGeneratedItem& Item);
+    void ActivateBrutalTransformation();
+    void EndBrutalTransformation();
+    void SortInventory();
     void EnsureStarterEquipment();
     void RecalculateEquipmentStats();
+    void ApplyWeaponPassiveStats(ENWWeaponType WeaponType);
     float GetAffixTotal(ENWAffixType AffixType) const;
     bool HasAffix(ENWAffixType AffixType) const;
     float RollDamageWithStats(float BaseDamage, bool& bOutCritical) const;
@@ -245,6 +291,8 @@ private:
     float DodgeEmpowerMagnitude = 0.0f;
     float BleedDamagePerTick = 0.0f;
     float ExecutionerMagnitude = 0.0f;
+    float PassiveRangeMultiplier = 1.0f;
+    float PassiveStatusMultiplier = 1.0f;
 
     float LastAbilityTime = -1000.0f;
     ENWWeaponType LastAbilityWeapon = ENWWeaponType::Greatsword;
@@ -253,11 +301,15 @@ private:
     float CombatStateEndTime = -1000.0f;
     float DodgeEmpowerEndTime = -1000.0f;
     float LastDamageTime = -1000.0f;
+    float LastFastTravelTime = -1000.0f;
+    float BrutalTransformationEndTime = -1000.0f;
     int32 AttackAnimationIndex = 0;
 
     int32 SelectedInventoryIndex = 0;
-    int32 InventoryCapacity = 30;
+    int32 SelectedFastTravelIndex = 0;
     float PickupRadius = 260.0f;
+
+    FTimerHandle BrutalTransformationTimer;
 
     UPROPERTY(Transient)
     TObjectPtr<UNWCombatHUDWidget> CombatHUD;

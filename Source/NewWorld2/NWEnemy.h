@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "GameFramework/Character.h"
+#include "NWCombatTypes.h"
 #include "NWEnemy.generated.h"
 
 class UStaticMeshComponent;
@@ -19,9 +20,16 @@ public:
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
     void ApplyStagger(float DurationSeconds);
+    void ConfigureEnemy(ENWEnemyArchetype InArchetype, bool bInWorldBoss = false, int32 InBossTier = 1);
 
     UFUNCTION(BlueprintPure, Category="Combat")
     float GetHealthRatio() const { return MaxHealth > 0.0f ? Health / MaxHealth : 0.0f; }
+
+    UFUNCTION(BlueprintPure, Category="Enemy")
+    ENWEnemyArchetype GetEnemyArchetype() const { return EnemyArchetype; }
+
+    UFUNCTION(BlueprintPure, Category="Enemy")
+    bool IsWorldBoss() const { return bWorldBoss; }
 
 protected:
     virtual void BeginPlay() override;
@@ -53,13 +61,28 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category="Combat")
     float AttackCooldown = 1.15f;
 
+    UPROPERTY(ReplicatedUsing=OnRep_EnemyIdentity, VisibleAnywhere, Category="Enemy")
+    ENWEnemyArchetype EnemyArchetype = ENWEnemyArchetype::Brute;
+
+    UPROPERTY(ReplicatedUsing=OnRep_EnemyIdentity, VisibleAnywhere, Category="Enemy")
+    bool bWorldBoss = false;
+
+    UPROPERTY(ReplicatedUsing=OnRep_EnemyIdentity, VisibleAnywhere, Category="Enemy")
+    int32 BossTier = 1;
+
     UFUNCTION()
     void OnRep_Health();
 
+    UFUNCTION()
+    void OnRep_EnemyIdentity();
+
 private:
     AActor* FindBestTarget() const;
+    void ApplyArchetypeStats();
     void SpawnProceduralLoot(AController* EventInstigator, AActor* DamageCauser);
+    void SpawnLootItem(const FNWGeneratedItem& Item, const FVector& Offset);
     void TryApplyLicensedCreatureVisual();
+    class USkeletalMesh* FindInstalledCreatureMesh(const TArray<FString>& Keywords) const;
 
     float LastAttackTime = -1000.0f;
     float StaggeredUntilTime = -1000.0f;
