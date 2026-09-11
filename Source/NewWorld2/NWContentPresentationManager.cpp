@@ -24,6 +24,7 @@ ANWContentPresentationManager::ANWContentPresentationManager()
     PrimaryActorTick.bCanEverTick = true;
     PrimaryActorTick.TickInterval = 0.10f;
     bReplicates = true;
+    bAlwaysRelevant = true;
     SetReplicateMovement(false);
     NetUpdateFrequency = 1.0f;
 }
@@ -98,10 +99,12 @@ void ANWContentPresentationManager::ReportDetectedLibraryContent()
     ReportKeywords(TEXT("Medieval Knight Shield"), { TEXT("Shield") });
     ReportKeywords(TEXT("Modular Medieval Armor"), { TEXT("Armor") });
 
-    for (const FString Hero : { FString(TEXT("Sevarog")), FString(TEXT("Rampage")), FString(TEXT("Khaimera")), FString(TEXT("Countess")), FString(TEXT("Revenant")) })
+    static const TCHAR* ParagonHeroes[] = { TEXT("Sevarog"), TEXT("Rampage"), TEXT("Khaimera"), TEXT("Countess"), TEXT("Revenant") };
+    for (const TCHAR* HeroName : ParagonHeroes)
     {
         USkeletalMesh* Mesh = nullptr;
         UClass* AnimClass = nullptr;
+        const FString Hero(HeroName);
         UE_LOG(LogTemp, Display, TEXT("[FAB] Paragon %-27s : %s"), *Hero, TryLoadParagonHero(Hero, Mesh, AnimClass) ? TEXT("DETECTADO") : TEXT("nao instalado"));
     }
 }
@@ -166,8 +169,8 @@ void ANWContentPresentationManager::UpdateCharacterPresentation(ANWCharacter* Ch
 
 void ANWContentPresentationManager::ApplyWeaponPresentation(ANWCharacter* Character, FPlayerVisualState& State, ENWWeaponType WeaponType, FName StyleId)
 {
-    UStaticMeshComponent* Right = EnsureStaticVisualComponent(Character, State.RightWeapon, TEXT("NW_WeaponVisual_R"));
-    UStaticMeshComponent* Left = EnsureStaticVisualComponent(Character, State.LeftWeapon, TEXT("NW_WeaponVisual_L"));
+    UStaticMeshComponent* Right = EnsureStaticVisualComponent(Character, State.RightWeapon, FName(TEXT("NW_WeaponVisual_R")));
+    UStaticMeshComponent* Left = EnsureStaticVisualComponent(Character, State.LeftWeapon, FName(TEXT("NW_WeaponVisual_L")));
     if (!Right || !Left || !Character->GetMesh()) { return; }
 
     Right->SetVisibility(false, true);
@@ -177,7 +180,9 @@ void ANWContentPresentationManager::ApplyWeaponPresentation(ANWCharacter* Charac
 
     TArray<FString> Preferred;
     if (!StyleId.IsNone()) { Preferred.Add(StyleId.ToString()); }
-    Preferred.Append({ TEXT("Weapon"), TEXT("Melee"), TEXT("Fantasy") });
+    Preferred.Add(TEXT("Weapon"));
+    Preferred.Add(TEXT("Melee"));
+    Preferred.Add(TEXT("Fantasy"));
 
     UStaticMesh* PrimaryMesh = FindBestStaticMesh(GetWeaponMeshKeywords(WeaponType), Preferred);
     if (!PrimaryMesh)
@@ -236,7 +241,7 @@ void ANWContentPresentationManager::ApplyArmorPresentation(ANWCharacter* Charact
         }
 
         Visual->SetSkeletalMeshAsset(ArmorMesh);
-        Visual->SetLeaderPoseComponent(Character->GetMesh());
+        Visual->SetLeaderPoseComponent(Character->GetMesh(), false, false);
         Visual->SetRelativeTransform(FTransform::Identity);
         Visual->SetVisibility(true, true);
         UE_LOG(LogTemp, Display, TEXT("[ARMOR-VISUAL] %s -> %s"), *Item.Name, *ArmorMesh->GetPathName());
@@ -299,7 +304,8 @@ void ANWContentPresentationManager::DetectAndSpawnBowPresentation(ANWCharacter* 
     }
     else if (Name.Contains(TEXT("Ability_E"), ESearchCase::IgnoreCase))
     {
-        for (const float YawOffset : { -10.0f, -5.0f, 0.0f, 5.0f, 10.0f })
+        static const float Spread[] = { -10.0f, -5.0f, 0.0f, 5.0f, 10.0f };
+        for (const float YawOffset : Spread)
         {
             SpawnBowProjectilePresentation(Character, YawOffset, 5.0f);
         }
@@ -359,7 +365,7 @@ void ANWContentPresentationManager::ApplyEnemyPresentation(ANWEnemy* Enemy)
 
     if (Enemy->IsWorldBoss())
     {
-        const int32 Variant = FMath::Abs(Enemy->GetUniqueID()) % 5;
+        const int32 Variant = static_cast<int32>(Enemy->GetUniqueID() % 5u);
         static const TCHAR* BossHeroes[] = { TEXT("Rampage"), TEXT("Sevarog"), TEXT("Khaimera"), TEXT("Countess"), TEXT("Revenant") };
         const FString PreferredHero = BossHeroes[Variant];
         TryLoadParagonHero(PreferredHero, Mesh, AnimClass);
@@ -392,6 +398,7 @@ void ANWContentPresentationManager::ApplyEnemyPresentation(ANWEnemy* Enemy)
 
     if (!Mesh) { return; }
 
+    if (!AnimClass) { AnimClass = FindAnimationClassForMesh(Mesh, {}); }
     Enemy->GetMesh()->SetSkeletalMeshAsset(Mesh);
     if (AnimClass)
     {
@@ -564,7 +571,7 @@ UNiagaraComponent* ANWContentPresentationManager::EnsureBrutalAura(ANWCharacter*
     if (State.BrutalAura.IsValid()) { return State.BrutalAura.Get(); }
     if (!Character) { return nullptr; }
 
-    UNiagaraComponent* Component = NewObject<UNiagaraComponent>(Character, MakeUniqueObjectName(Character, UNiagaraComponent::StaticClass(), TEXT("NW_BrutalAura")), RF_Transient);
+    UNiagaraComponent* Component = NewObject<UNiagaraComponent>(Character, MakeUniqueObjectName(Character, UNiagaraComponent::StaticClass(), FName(TEXT("NW_BrutalAura"))), RF_Transient);
     if (!Component) { return nullptr; }
 
     Character->AddInstanceComponent(Component);
@@ -581,7 +588,7 @@ UPointLightComponent* ANWContentPresentationManager::EnsureBrutalLight(ANWCharac
     if (State.BrutalLight.IsValid()) { return State.BrutalLight.Get(); }
     if (!Character) { return nullptr; }
 
-    UPointLightComponent* Component = NewObject<UPointLightComponent>(Character, MakeUniqueObjectName(Character, UPointLightComponent::StaticClass(), TEXT("NW_BrutalLight")), RF_Transient);
+    UPointLightComponent* Component = NewObject<UPointLightComponent>(Character, MakeUniqueObjectName(Character, UPointLightComponent::StaticClass(), FName(TEXT("NW_BrutalLight"))), RF_Transient);
     if (!Component) { return nullptr; }
 
     Character->AddInstanceComponent(Component);
@@ -683,6 +690,7 @@ bool ANWContentPresentationManager::TryLoadParagonHero(const FString& HeroName, 
 
     OutMesh = LoadObject<USkeletalMesh>(nullptr, *MeshPath);
     OutAnimClass = LoadClass<UAnimInstance>(nullptr, *AnimPath);
+    if (OutMesh && !OutAnimClass) { OutAnimClass = FindAnimationClassForMesh(OutMesh, { HeroName }); }
     return OutMesh != nullptr;
 }
 
