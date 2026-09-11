@@ -108,7 +108,7 @@ void UNWCombatHUDWidget::BuildHUD()
         Card->SetBrushColor(FLinearColor(0.06f, 0.075f, 0.09f, 0.96f));
         UHorizontalBoxSlot* CardSlot = AbilityRow->AddChildToHorizontalBox(Card);
         CardSlot->SetPadding(FMargin(5.0f));
-        CardSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+        CardSlot->SetSize(FSlateChildSize(1.0f, ESlateSizeRule::Fill));
 
         UTextBlock* Text = MakeText(FString::Printf(TEXT("[%s] Habilidade"), Keys[Index]), 15);
         Text->SetJustification(ETextJustify::Center);
@@ -164,10 +164,7 @@ void UNWCombatHUDWidget::RefreshHUD()
     const FString NearbyLoot = Character->GetNearbyLootLabel();
     LootPromptText->SetText(FText::FromString(NearbyLoot.IsEmpty() ? TEXT("") : FString::Printf(TEXT("[G] Coletar  %s"), *NearbyLoot)));
 
-    if (bInventoryVisible)
-    {
-        RefreshInventory();
-    }
+    if (bInventoryVisible) { RefreshInventory(); }
 }
 
 void UNWCombatHUDWidget::ToggleInventory()
@@ -177,10 +174,7 @@ void UNWCombatHUDWidget::ToggleInventory()
     {
         InventoryPanel->SetVisibility(bInventoryVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
     }
-    if (bInventoryVisible)
-    {
-        RefreshInventory();
-    }
+    if (bInventoryVisible) { RefreshInventory(); }
 }
 
 void UNWCombatHUDWidget::RefreshInventory()
