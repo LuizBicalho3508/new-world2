@@ -1,0 +1,33 @@
+# Unreal Engine generated files
+Binaries/
+Build/
+DerivedDataCache/
+Intermediate/
+Saved/
+.vs/
+.vscode/
+*.VC.db
+*.VC.opendb
+*.sln
+*.suo
+*.xcodeproj
+*.xcworkspace
+
+# Rider / JetBrains
+.idea/
+*.sln.iml
+
+# OS / temp
+.DS_Store
+Thumbs.db
+*.tmp
+*.log
+
+# Packaged builds
+Dist/
+Packages/
+
+# Keep authored Unreal content, source, config and docs
+!Content/
+!Config/
+!Source/
