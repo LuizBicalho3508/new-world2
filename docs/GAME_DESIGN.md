@@ -8,17 +8,18 @@ Action RPG 3D em terceira pessoa com foco em combate responsivo, exploracao, PvE
 
 1. **Sem grind de level**: nao existe nivel de personagem como barreira principal de poder.
 2. **Progressao horizontal**: o jogador evolui por equipamento, combinacoes, conhecimento, especializacoes e dominio mecanico.
-3. **Combate definido pelas armas**: cada familia de arma possui identidade, ataque basico e 3 habilidades proprias.
-4. **Duas armas por loadout**: o jogador alterna entre duas armas e recebe bonus ao encadear habilidades de armas diferentes dentro da janela de combo.
-5. **Equipamento altera gameplay**: pecas nao servem apenas para subir numeros; afixos podem mudar comportamento do combate. Exemplo inicial: luvas com revestimento venenoso adicionam dano periodico a laminas e flechas.
-6. **PvPvE desde a arquitetura**: jogadores, criaturas, cidades, NPCs e eventos compartilham o mesmo mundo e regras de autoridade.
-7. **Mundo mutavel**: terreno, recursos, criaturas, assentamentos e propriedades de itens podem mudar por epochs controlados pelo servidor.
-8. **Geracao com regras, nao caos puro**: procedural deve respeitar navegacao, coerencia espacial, raridade, balanceamento e identidade visual.
-9. **Sem historia obrigatoria no MVP**: lore e narrativa ficam fora do caminho critico ate combate, mundo, performance e multiplayer estarem comprovados.
+3. **Combate definido pelas armas**: cada familia possui identidade, ataque basico e 3 habilidades proprias.
+4. **Duas armas por loadout**: trocar entre duas armas permite combos cross-weapon.
+5. **Defesa ativa**: posicionamento, stamina, block, parry e dodge importam tanto quanto dano.
+6. **Equipamento altera gameplay**: pecas podem mudar status, cooldown, defesa, mobilidade e comportamento das habilidades.
+7. **PvPvE desde a arquitetura**: jogadores, criaturas, cidades, NPCs e eventos compartilham o mesmo mundo e regras de autoridade.
+8. **Mundo mutavel**: terreno, recursos, criaturas, assentamentos e itens podem mudar por epochs controlados pelo servidor.
+9. **Geracao com regras, nao caos puro**: procedural respeita navegacao, coerencia espacial, raridade, balanceamento e identidade visual.
+10. **Sem historia obrigatoria no MVP**: narrativa fica fora do caminho critico ate combate, mundo, performance e multiplayer estarem comprovados.
 
 ## Loadout de combate
 
-O personagem equipa dois slots de arma. Familias iniciais:
+Familias iniciais:
 
 - Cajado;
 - Espada Grande de duas maos;
@@ -28,27 +29,46 @@ O personagem equipa dois slots de arma. Familias iniciais:
 - Arco;
 - Arma de Fogo.
 
-Cada familia recebe:
-
-- ataque basico;
-- habilidade ofensiva 1;
-- habilidade ofensiva 2;
-- habilidade de cura;
-- alcance, raio, potencia e ritmo proprios;
-- compatibilidades diferentes com afixos de equipamento.
-
-Cooldown base atual das habilidades: aproximadamente 3 segundos. Esse valor e propositalmente curto no prototipo para acelerar testes de combo e balanceamento.
+Cada familia recebe ataque basico, duas habilidades ofensivas, uma cura e valores proprios de alcance/raio/potencia. Cooldown base atual: aproximadamente 3 segundos.
 
 ## Combo entre duas armas
 
 Fluxo de referencia:
 
 1. usar Q/E da arma A;
-2. trocar rapidamente para arma B;
-3. usar Q/E da arma B dentro de 2,5 segundos;
-4. aplicar multiplicador de combo no segundo golpe.
+2. trocar para arma B;
+3. usar Q/E da arma B em ate 2,5 segundos;
+4. receber o bonus de combo no segundo golpe.
 
-Valor inicial de teste: +18% de dano. O objetivo final e substituir parte desse bonus numerico por interacoes mecanicas, como detonacao de status, stagger, extensao de debuff e conversao elemental.
+Valor atual de teste: +18% de dano. A evolucao desejada e transformar parte desse bonus em interacoes como detonacao de status, stagger, extensao de debuff e conversao elemental.
+
+## Defesa ativa
+
+### Block
+
+Mouse direito inicia guarda. Golpes frontais drenam stamina e tem dano reduzido. `Guarda Fortificada` melhora a eficiencia. Stamina zerada causa guard break/stagger.
+
+### Parry
+
+A abertura da guarda possui janela de aproximadamente 0,22 segundo. Um parry perfeito:
+
+- anula o golpe;
+- recupera stamina;
+- pode curar via `Parry Restaurador`;
+- staggera atacantes compativeis.
+
+### Dodge
+
+Alt esquerdo executa uma esquiva direcional. No prototipo:
+
+- custo de 22 stamina;
+- ~0,28 s de invulnerabilidade inicial;
+- ~0,48 s de estado total;
+- `Impulso da Esquiva` fortalece o proximo ataque.
+
+### Stagger e hit reactions
+
+Parry, guard break e golpes de alto impacto podem causar stagger. Quando pacotes de animacao compativeis estao instalados, esses estados disparam montages/hit reactions; a regra de gameplay nao depende da presenca do asset visual.
 
 ## Controles do vertical slice
 
@@ -56,18 +76,23 @@ Valor inicial de teste: +18% de dano. O objetivo final e substituir parte desse 
 - Mouse: camera;
 - Espaco: pulo;
 - Shift: corrida;
-- Botao esquerdo: ataque basico da arma ativa;
-- Q: habilidade ofensiva 1;
-- E: habilidade ofensiva 2;
-- C: habilidade de cura;
-- 1/2: selecionar slots de arma;
+- Botao esquerdo: ataque basico;
+- Botao direito: block/parry;
+- Alt esquerdo: dodge;
+- Q/E: ofensivas;
+- C: cura;
+- 1/2: selecionar slots;
 - F: troca rapida;
-- Z/X: percorrer familias de arma nos slots durante o prototipo;
-- R: forcar novo epoch.
+- Z/X: percorrer familias no prototipo;
+- G: coletar loot;
+- I: inventario;
+- setas: selecionar item;
+- Enter: equipar;
+- R: novo epoch.
 
-## Equipamentos, sets e afixos
+## Equipamentos, inventario e afixos
 
-Slots iniciais:
+Slots atuais:
 
 - Cabeca;
 - Peitoral;
@@ -75,7 +100,9 @@ Slots iniciais:
 - Pernas;
 - Botas.
 
-Cada drop possui seed, raridade e afixos. O sistema atual suporta:
+O drop agora aparece fisicamente no mundo e precisa ser coletado. Itens carregam seed, item level, raridade e afixos. O inventario inicial suporta 30 itens e a troca de equipamento ocorre manualmente.
+
+Afixos implementados:
 
 - Poder;
 - Vitalidade;
@@ -83,73 +110,91 @@ Cada drop possui seed, raridade e afixos. O sistema atual suporta:
 - Aceleracao;
 - Cura;
 - Revestimento Venenoso;
-- Roubo de Vida.
+- Roubo de Vida;
+- Armadura;
+- Marca de Fogo;
+- Mordida Gelida;
+- Corrente Eletrica;
+- Eco de Habilidade;
+- Ritmo Critico;
+- Guarda Fortificada;
+- Parry Restaurador;
+- Impulso da Esquiva;
+- Sangramento;
+- Executor.
 
-A filosofia de sets e **mudar a build, nao apenas somar atributo**. O prototipo ja implementa o primeiro exemplo funcional: luvas com `Revestimento Venenoso` fazem ataques e habilidades de Espada Grande, Duas Espadas, Espada e Escudo, Adagas e Arco aplicarem tres ticks de veneno. Cajado e arma de fogo nao recebem esse efeito.
+A filosofia permanece: **mudar a build, nao apenas somar atributo**. Alguns efeitos atuais aplicam DoT, slow, chain damage, repeticao parcial de habilidade, cooldown em critico, melhoria de guarda/parry/dodge ou bonus de execucao.
 
-Evolucao planejada de sets:
+## Sets
+
+A infraestrutura de afixos ja permite construir sets depois. Direcao planejada:
 
 - bonus por 2/3/5 pecas;
-- afixos que alteram geometria/range de habilidades;
-- conversao de dano fisico em elemental;
-- proc condicionado a block/parry/dodge;
-- habilidades ganhando cargas, ricochete, area persistente ou detonacao;
+- alteracao de geometria/range de habilidade;
+- conversao elemental;
+- cargas adicionais;
+- ricochete;
+- area persistente;
+- detonacao de status;
 - trade-offs para evitar uma unica build dominante.
 
 ## Geracao procedural de itens
 
-Cada item deve ser reproduzivel por seed e composto por:
+Cada item deve ser reproduzivel por seed e inclui:
 
 - archetype/slot;
+- item level ligado lentamente ao estado do mundo, nao a level do personagem;
 - raridade;
-- propriedades primarias;
-- afixos compativeis;
-- magnitudes dentro de faixas controladas;
-- modificadores situacionais;
-- assinatura de seed para auditoria do servidor.
+- afixos compativeis por slot;
+- magnitudes controladas;
+- score de comparacao;
+- seed para auditoria.
 
-O servidor e a autoridade. O cliente nunca decide atributos de item, drop, dano ou resultado de crafting.
+O servidor e a autoridade. O cliente nunca decide atributos, drop, dano ou resultado de crafting.
 
 ## Mundo vivo
 
-O vertical slice atual gera dois assentamentos com estruturas e civis. Mobs ambientais coexistem com ondas de invasao.
+O vertical slice gera dois assentamentos com estruturas e civis, mobs ambientais e ondas de invasao. Inimigos priorizam jogadores no raio de aggro; fora dele atacam civis e nucleo da cidade.
 
-Regras iniciais:
+Regras atuais:
 
-- inimigos priorizam jogadores dentro do raio de aggro;
-- sem jogador proximo, avancam contra NPCs e nucleo da cidade;
-- primeira invasao ocorre aproximadamente 20 segundos apos o inicio;
-- novas ondas surgem aproximadamente a cada 55 segundos;
-- cada assentamento recebe 10 invasores por onda;
-- breach do nucleo e restaurado no prototipo para manter o ciclo de teste continuo.
+- primeira invasao: ~20 s;
+- recorrencia: ~55 s;
+- 10 invasores por assentamento;
+- breach do nucleo e restaurado no prototipo para manter o ciclo de teste.
 
-No produto final, ataques devem variar por faccao, clima, biome, recursos locais, horario e estado economico/regional.
+No produto final, ataques devem variar por faccao, clima, bioma, recursos, horario e estado economico/regional.
 
 ## Mundo por epochs
 
-O prototipo usa um novo epoch a cada 180 segundos. No produto final, o epoch sera dividido em camadas:
+O prototipo usa novo epoch a cada 180 segundos para acelerar validacao. A direcao final separa:
 
-- **micro**: recursos, clima, patrulhas e eventos, mudando em minutos/horas;
-- **meso**: distribuicao de criaturas, economia local, invasoes e pontos de interesse, mudando em dias;
-- **macro**: terreno/biomas/regioes, mudando em janelas maiores e com transicao segura.
+- **micro**: recursos, clima, patrulhas e eventos;
+- **meso**: criaturas, economia local, invasoes e POIs;
+- **macro**: terreno/biomas/regioes.
 
-Essa separacao evita que uma mudanca de terreno destrua uma luta, cidade ou atividade no meio de uma sessao.
+## Streaming e PCG
+
+A base agora prepara World Partition localmente e um PCG Component particionado em runtime. O grafo PCG binario sera autorado no Editor; ate la, o gerador C++ continua como fallback para manter o prototipo executavel.
+
+O objetivo de escala e usar grids diferentes para ground cover, vegetacao, recursos e POIs, evitando gerar tudo na mesma granularidade.
 
 ## Direcao visual
 
-Objetivo: realismo estilizado de alta qualidade, com leitura clara de combate.
+Objetivo: realismo estilizado de alta qualidade com leitura clara de combate.
 
 Prioridades:
 
-- terreno com materiais por camada, umidade, rocha, lama, vegetacao e trilhas;
-- foliage denso usando HISM/PCG/LOD;
-- estruturas modulares com variacao procedural;
-- NPCs com silhuetas e ocupacoes distintas;
-- criaturas em grupos e eventos de massa;
+- personagens humanoides realistas;
+- animacoes de locomocao/combate;
+- foliage denso com PCG/HISM/LOD;
+- estruturas modulares;
+- criaturas variadas;
+- materiais de terreno;
 - iluminacao atmosferica escalavel;
-- presets graficos desde GTX 1650 ate GPUs modernas.
+- presets desde GTX 1650 ate GPUs modernas.
 
-Enquanto o sistema-base estiver sendo validado, primitivas da Unreal permanecem como placeholders para nao prender o codigo a assets especificos/licencas externas.
+O codigo usa conteudo gratuito licenciado apenas quando instalado localmente; nenhum asset de terceiro e redistribuido isoladamente no GitHub.
 
 ## O que nao entra ainda
 
@@ -159,8 +204,7 @@ Enquanto o sistema-base estiver sendo validado, primitivas da Unreal permanecem 
 - guildas completas;
 - housing;
 - centenas de jogadores por shard;
-- arte final completa;
 - anti-cheat comercial;
-- backend de conta definitivo.
+- backend definitivo.
 
 Esses itens entram apenas depois que combate, geracao, performance e rede forem comprovados.
