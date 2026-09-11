@@ -10,6 +10,7 @@
 
 class ANWCharacter;
 class ANWDungeonSite;
+class ANWEnemy;
 class UNiagaraSystem;
 class USoundBase;
 
@@ -33,6 +34,18 @@ public:
     UFUNCTION(BlueprintPure, Category="World|Biomes")
     ENWBiomeType GetBiomeAtLocation(const FVector& Location) const;
 
+    UFUNCTION(BlueprintPure, Category="World|Travel")
+    int32 GetFastTravelDestinationCount() const { return FastTravelNames.Num(); }
+
+    UFUNCTION(BlueprintPure, Category="World|Travel")
+    FString GetFastTravelDestinationName(int32 Index) const;
+
+    UFUNCTION(BlueprintPure, Category="World|Travel")
+    FVector GetFastTravelDestinationLocation(int32 Index) const;
+
+    UFUNCTION(BlueprintPure, Category="World|Travel")
+    bool IsValidFastTravelDestination(int32 Index) const;
+
 protected:
     virtual void BeginPlay() override;
 
@@ -46,6 +59,9 @@ private:
     void PlayAbilityPresentation(ANWCharacter* Character, int32 AbilityIndex);
     void PlayWeatherPresentation(ANWCharacter* Character, ENWWeatherType EffectiveWeather);
     void SpawnWorldDungeons();
+    void SpawnRoamingUndead();
+    void MaintainWorldBosses();
+    void SpawnOneWorldBoss();
 
     UNiagaraSystem* FindBestNiagara(const TArray<FString>& Keywords) const;
     USoundBase* FindBestSound(const TArray<FString>& Keywords) const;
@@ -72,6 +88,11 @@ private:
     UPROPERTY(EditDefaultsOnly, Category="World|Biomes", meta=(ClampMin="1000.0"))
     float BiomeCellSize = 4800.0f;
 
+    UPROPERTY(EditDefaultsOnly, Category="World|Bosses", meta=(ClampMin="1", ClampMax="6"))
+    int32 DesiredWorldBossCount = 3;
+
+    TArray<FString> FastTravelNames;
+    TArray<FVector> FastTravelLocations;
     TArray<FAssetData> NiagaraAssets;
     TArray<FAssetData> SoundAssets;
     TMap<TWeakObjectPtr<ANWCharacter>, TArray<float>> PreviousAbilityCooldowns;
@@ -82,7 +103,14 @@ private:
     UPROPERTY(Transient)
     TArray<TObjectPtr<ANWDungeonSite>> DungeonSites;
 
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<ANWEnemy>> RoamingEnemies;
+
+    UPROPERTY(Transient)
+    TArray<TObjectPtr<ANWEnemy>> WorldBosses;
+
     FTimerHandle WeatherTimer;
+    FTimerHandle BossMaintenanceTimer;
     float EnvironmentAccumulator = 0.0f;
     float WeatherFxAccumulator = 0.0f;
 };
