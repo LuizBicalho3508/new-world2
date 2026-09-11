@@ -25,6 +25,7 @@
 #include "NWEnemy.h"
 #include "NWLootPickup.h"
 #include "NWProceduralWorldManager.h"
+#include "NWWorldEventDirector.h"
 #include "TimerManager.h"
 #include "UObject/ConstructorHelpers.h"
 
@@ -131,6 +132,11 @@ void ANWCharacter::Tick(float DeltaSeconds)
         ApplyStagger(0.85f, nullptr);
     }
 
+    if (bBrutalTransformationActive && Now >= BrutalTransformationEndTime)
+    {
+        EndBrutalTransformation();
+    }
+
     const bool bCanRegen = CombatState != ENWCombatState::Blocking && CombatState != ENWCombatState::Dodging && CombatState != ENWCombatState::Staggered;
     if (bCanRegen && (Now - LastDamageTime) >= 0.55f && Stamina < MaxStamina)
     {
@@ -164,11 +170,14 @@ void ANWCharacter::SetupPlayerInputComponent(UInputComponent* PlayerInputCompone
     PlayerInputComponent->BindAction(TEXT("QuickSwap"), IE_Pressed, this, &ANWCharacter::QuickSwapWeapon);
     PlayerInputComponent->BindAction(TEXT("CyclePrimaryWeapon"), IE_Pressed, this, &ANWCharacter::CyclePrimaryWeapon);
     PlayerInputComponent->BindAction(TEXT("CycleSecondaryWeapon"), IE_Pressed, this, &ANWCharacter::CycleSecondaryWeapon);
+    PlayerInputComponent->BindAction(TEXT("CycleArrowElement"), IE_Pressed, this, &ANWCharacter::CycleArrowElement);
     PlayerInputComponent->BindAction(TEXT("PickupLoot"), IE_Pressed, this, &ANWCharacter::PickupNearestLoot);
     PlayerInputComponent->BindAction(TEXT("Inventory"), IE_Pressed, this, &ANWCharacter::ToggleInventory);
     PlayerInputComponent->BindAction(TEXT("InventoryPrev"), IE_Pressed, this, &ANWCharacter::InventoryPrevious);
     PlayerInputComponent->BindAction(TEXT("InventoryNext"), IE_Pressed, this, &ANWCharacter::InventoryNext);
     PlayerInputComponent->BindAction(TEXT("InventoryEquip"), IE_Pressed, this, &ANWCharacter::EquipSelectedInventoryItem);
+    PlayerInputComponent->BindAction(TEXT("FastTravelNext"), IE_Pressed, this, &ANWCharacter::CycleFastTravelDestination);
+    PlayerInputComponent->BindAction(TEXT("FastTravelConfirm"), IE_Pressed, this, &ANWCharacter::ConfirmFastTravel);
     PlayerInputComponent->BindAction(TEXT("RegenerateWorld"), IE_Pressed, this, &ANWCharacter::RegenerateWorld);
 }
 
@@ -246,6 +255,34 @@ void ANWCharacter::CycleSecondaryWeapon()
 {
     if (HasAuthority()) { ServerCycleLoadout_Implementation(false); }
     else { ServerCycleLoadout(false); }
+}
+
+void ANWCharacter::CycleArrowElement()
+{
+    if (ActiveWeapon != ENWWeaponType::Bow && PrimaryWeapon != ENWWeaponType::Bow && SecondaryWeapon != ENWWeaponType::Bow) { return; }
+    if (HasAuthority()) { ServerCycleArrowElement_Implementation(); }
+    else { ServerCycleArrowElement(); }
+}
+
+void ANWCharacter::CycleFastTravelDestination()
+{
+    if (!GetWorld()) { return; }
+    for (TActorIterator<ANWWorldEventDirector> It(GetWorld()); It; ++It)
+    {
+        const int32 Count = It->GetFastTravelDestinationCount();
+        if (Count > 0)
+        {
+            SelectedFastTravelIndex = (SelectedFastTravelIndex + 1) % Count;
+            UE_LOG(LogTemp, Display, TEXT("[VIAGEM] destino selecionado: %s"), *It->GetFastTravelDestinationName(SelectedFastTravelIndex));
+        }
+        break;
+    }
+}
+
+void ANWCharacter::ConfirmFastTravel()
+{
+    if (HasAuthority()) { ServerFastTravel_Implementation(SelectedFastTravelIndex); }
+    else { ServerFastTravel(SelectedFastTravelIndex); }
 }
 
 void ANWCharacter::RegenerateWorld()
@@ -331,7 +368,38 @@ void ANWCharacter::ServerCycleLoadout_Implementation(bool bPrimarySlot)
     Slot = NWCombat::GetNextWeaponType(Slot);
     if (Slot == Other) { Slot = NWCombat::GetNextWeaponType(Slot); }
     if (ActiveWeapon == Previous) { ActiveWeapon = Slot; }
+    RecalculateEquipmentStats();
     LogLoadout();
+}
+
+void ANWCharacter::ServerCycleArrowElement_Implementation()
+{
+    const int32 Next = (static_cast<int32>(ActiveArrowElement) + 1) % 5;
+    ActiveArrowElement = static_cast<ENWArrowElement>(Next);
+    ForceNetUpdate();
+    UE_LOG(LogTemp, Display, TEXT("[ARCO] tipo de flecha: %s"), *NWCombat::ArrowElementToString(ActiveArrowElement));
+}
+
+void ANWCharacter::ServerFastTravel_Implementation(int32 DestinationIndex)
+{
+    if (!GetWorld() || CombatState != ENWCombatState::Normal) { return; }
+    const float Now = GetWorld()->GetTimeSeconds();
+    if ((Now - LastFastTravelTime) < 15.0f) { return; }
+
+    for (TActorIterator<ANWWorldEventDirector> It(GetWorld()); It; ++It)
+    {
+        if (!It->IsValidFastTravelDestination(DestinationIndex)) { return; }
+        FVector Destination = It->GetFastTravelDestinationLocation(DestinationIndex);
+        for (TActorIterator<ANWProceduralWorldManager> WorldIt(GetWorld()); WorldIt; ++WorldIt)
+        {
+            Destination.Z = WorldIt->GetTerrainHeightAt(Destination.X, Destination.Y) + 260.0f;
+            break;
+        }
+        SetActorLocation(Destination, false, nullptr, ETeleportType::TeleportPhysics);
+        LastFastTravelTime = Now;
+        UE_LOG(LogTemp, Warning, TEXT("[VIAGEM] teleporte concluido para %s"), *It->GetFastTravelDestinationName(DestinationIndex));
+        return;
+    }
 }
 
 void ANWCharacter::ServerRegenerateWorld_Implementation()
@@ -374,7 +442,7 @@ void ANWCharacter::ExecuteAttack()
     FRotator ViewRotation;
     GetActorEyesViewPoint(ViewLocation, ViewRotation);
 
-    const FVector End = ViewLocation + ViewRotation.Vector() * Weapon.BasicRange;
+    const FVector End = ViewLocation + ViewRotation.Vector() * Weapon.BasicRange * PassiveRangeMultiplier;
     FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(NWAttack), false, this);
     TArray<FHitResult> Hits;
     GetWorld()->SweepMultiByChannel(Hits, ViewLocation, End, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(Weapon.BasicRadius), QueryParams);
@@ -437,7 +505,7 @@ void ANWCharacter::ExecuteDamageAbility(const FNWWeaponAbilityDefinition& Abilit
 
     if (Ability.Kind == ENWAbilityKind::DirectDamage)
     {
-        const FVector End = ViewLocation + ViewRotation.Vector() * Ability.Range;
+        const FVector End = ViewLocation + ViewRotation.Vector() * Ability.Range * PassiveRangeMultiplier;
         TArray<FHitResult> Hits;
         FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(NWDirectAbility), false, this);
         GetWorld()->SweepMultiByChannel(Hits, ViewLocation, End, FQuat::Identity, ECC_Pawn, FCollisionShape::MakeSphere(Ability.Radius), QueryParams);
@@ -453,7 +521,8 @@ void ANWCharacter::ExecuteDamageAbility(const FNWWeaponAbilityDefinition& Abilit
     }
 
     const bool bRangedArea = ActiveWeapon == ENWWeaponType::Staff || ActiveWeapon == ENWWeaponType::Bow || ActiveWeapon == ENWWeaponType::Firearm;
-    const FVector Center = bRangedArea ? GetActorLocation() + ViewRotation.Vector() * Ability.Range : GetActorLocation() + ViewRotation.Vector() * FMath::Min(Ability.Range, 260.0f);
+    const float ScaledRange = Ability.Range * PassiveRangeMultiplier;
+    const FVector Center = bRangedArea ? GetActorLocation() + ViewRotation.Vector() * ScaledRange : GetActorLocation() + ViewRotation.Vector() * FMath::Min(ScaledRange, 260.0f);
 
     FCollisionObjectQueryParams ObjectParams;
     ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
@@ -543,7 +612,7 @@ float ANWCharacter::TakeDamage(float DamageAmount, FDamageEvent const& DamageEve
         if (Stamina <= KINDA_SMALL_NUMBER) { ApplyStagger(0.85f, DamageCauser); }
     }
 
-    AdjustedDamage *= (1.0f - FMath::Clamp(ArmorValue * 0.006f, 0.0f, 0.45f));
+    AdjustedDamage *= (1.0f - FMath::Clamp(ArmorValue * 0.006f, 0.0f, 0.62f));
 
     const float AppliedDamage = Super::TakeDamage(AdjustedDamage, DamageEvent, EventInstigator, DamageCauser);
     if (AppliedDamage <= 0.0f) { return AppliedDamage; }
@@ -597,7 +666,7 @@ void ANWCharacter::ApplyWeaponDamage(AActor* Target, float BaseDamage, bool bAll
     }
     if (GetTargetHealthRatio(Target) <= 0.30f && ExecutionerMagnitude > 0.0f)
     {
-        Damage *= 1.0f + FMath::Clamp(ExecutionerMagnitude * 0.025f, 0.05f, 0.50f);
+        Damage *= 1.0f + FMath::Clamp(ExecutionerMagnitude * 0.025f, 0.05f, 0.60f);
     }
 
     UGameplayStatics::ApplyDamage(Target, Damage, GetController(), this, UDamageType::StaticClass());
@@ -611,9 +680,11 @@ void ANWCharacter::ApplyWeaponDamage(AActor* Target, float BaseDamage, bool bAll
     }
 
     if (!bAllowStatusEffects) { return; }
-    if (PoisonDamagePerTick > 0.0f && NWCombat::IsPoisonCompatible(ActiveWeapon)) { ApplyStatusDamage(Target, PoisonDamagePerTick, 3, 1.0f); }
-    if (FireDamagePerTick > 0.0f) { ApplyStatusDamage(Target, FireDamagePerTick, 3, 0.75f); }
-    if (BleedDamagePerTick > 0.0f && ActiveWeapon != ENWWeaponType::Staff && ActiveWeapon != ENWWeaponType::Firearm) { ApplyStatusDamage(Target, BleedDamagePerTick, 4, 0.65f); }
+    if (PoisonDamagePerTick > 0.0f && NWCombat::IsPoisonCompatible(ActiveWeapon)) { ApplyStatusDamage(Target, PoisonDamagePerTick * PassiveStatusMultiplier, 3, 1.0f); }
+    if (FireDamagePerTick > 0.0f) { ApplyStatusDamage(Target, FireDamagePerTick * PassiveStatusMultiplier, 3, 0.75f); }
+    if (BleedDamagePerTick > 0.0f && ActiveWeapon != ENWWeaponType::Staff && ActiveWeapon != ENWWeaponType::Firearm) { ApplyStatusDamage(Target, BleedDamagePerTick * PassiveStatusMultiplier, 4, 0.65f); }
+
+    if (ActiveWeapon == ENWWeaponType::Bow) { ApplyElementalArrow(Target, Damage); }
 
     if (bFromAbility)
     {
@@ -634,6 +705,29 @@ void ANWCharacter::ApplyWeaponDamage(AActor* Target, float BaseDamage, bool bAll
                 }
             }), 0.22f, false);
         }
+    }
+}
+
+void ANWCharacter::ApplyElementalArrow(AActor* Target, float Damage)
+{
+    if (!Target || ActiveWeapon != ENWWeaponType::Bow) { return; }
+
+    switch (ActiveArrowElement)
+    {
+        case ENWArrowElement::Fire:
+            ApplyStatusDamage(Target, FMath::Max(4.0f, Damage * 0.12f) * PassiveStatusMultiplier, 4, 0.65f);
+            break;
+        case ENWArrowElement::Poison:
+            ApplyStatusDamage(Target, FMath::Max(3.5f, Damage * 0.09f) * PassiveStatusMultiplier, 5, 0.72f);
+            break;
+        case ENWArrowElement::Lightning:
+            ApplyShockChain(Target, Damage, 0.30f * PassiveStatusMultiplier);
+            break;
+        case ENWArrowElement::Frost:
+            ApplyFrostbite(Target, 10.0f * PassiveStatusMultiplier);
+            break;
+        default:
+            break;
     }
 }
 
@@ -659,7 +753,7 @@ void ANWCharacter::ApplyStatusDamage(AActor* Target, float DamagePerTick, int32 
     }), IntervalSeconds, true, IntervalSeconds);
 }
 
-void ANWCharacter::ApplyShockChain(AActor* PrimaryTarget, float BaseDamage)
+void ANWCharacter::ApplyShockChain(AActor* PrimaryTarget, float BaseDamage, float OverrideMultiplier)
 {
     if (!GetWorld() || !PrimaryTarget) { return; }
 
@@ -667,9 +761,10 @@ void ANWCharacter::ApplyShockChain(AActor* PrimaryTarget, float BaseDamage)
     ObjectParams.AddObjectTypesToQuery(ECC_Pawn);
     FCollisionQueryParams QueryParams(SCENE_QUERY_STAT(NWShockChain), false, this);
     TArray<FOverlapResult> Overlaps;
-    GetWorld()->OverlapMultiByObjectType(Overlaps, PrimaryTarget->GetActorLocation(), FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(360.0f), QueryParams);
+    GetWorld()->OverlapMultiByObjectType(Overlaps, PrimaryTarget->GetActorLocation(), FQuat::Identity, ObjectParams, FCollisionShape::MakeSphere(420.0f), QueryParams);
 
-    const float ChainDamage = BaseDamage * FMath::Clamp(ShockChainMagnitude * 0.018f, 0.08f, 0.35f);
+    const float Multiplier = OverrideMultiplier > 0.0f ? OverrideMultiplier : FMath::Clamp(ShockChainMagnitude * 0.018f * PassiveStatusMultiplier, 0.08f, 0.42f);
+    const float ChainDamage = BaseDamage * Multiplier;
     for (const FOverlapResult& Overlap : Overlaps)
     {
         AActor* Other = Overlap.GetActor();
@@ -679,7 +774,7 @@ void ANWCharacter::ApplyShockChain(AActor* PrimaryTarget, float BaseDamage)
     }
 }
 
-void ANWCharacter::ApplyFrostbite(AActor* Target)
+void ANWCharacter::ApplyFrostbite(AActor* Target, float MinimumMagnitude)
 {
     ACharacter* TargetCharacter = Cast<ACharacter>(Target);
     if (!TargetCharacter || !GetWorld()) { return; }
@@ -688,14 +783,15 @@ void ANWCharacter::ApplyFrostbite(AActor* Target)
     if (!Movement) { return; }
 
     const float OriginalSpeed = Movement->MaxWalkSpeed;
-    Movement->MaxWalkSpeed = OriginalSpeed * FMath::Clamp(1.0f - FrostbiteMagnitude * 0.018f, 0.52f, 0.88f);
+    const float EffectiveMagnitude = FMath::Max(FrostbiteMagnitude * PassiveStatusMultiplier, MinimumMagnitude);
+    Movement->MaxWalkSpeed = OriginalSpeed * FMath::Clamp(1.0f - EffectiveMagnitude * 0.018f, 0.48f, 0.88f);
 
     TWeakObjectPtr<ACharacter> WeakCharacter(TargetCharacter);
     FTimerHandle Handle;
     GetWorldTimerManager().SetTimer(Handle, FTimerDelegate::CreateLambda([WeakCharacter, OriginalSpeed]()
     {
         if (WeakCharacter.IsValid() && WeakCharacter->GetCharacterMovement()) { WeakCharacter->GetCharacterMovement()->MaxWalkSpeed = OriginalSpeed; }
-    }), 1.55f, false);
+    }), 1.75f, false);
 }
 
 float ANWCharacter::GetTargetHealthRatio(AActor* Target) const
@@ -717,11 +813,27 @@ void ANWCharacter::SetActiveWeaponInternal(ENWWeaponType RequestedWeapon)
 
 bool ANWCharacter::TryAddInventoryItem(const FNWGeneratedItem& Item)
 {
-    if (!HasAuthority() || InventoryItems.Num() >= InventoryCapacity) { return false; }
+    if (!HasAuthority()) { return false; }
     InventoryItems.Add(Item);
+    SortInventory();
     ForceNetUpdate();
-    UE_LOG(LogTemp, Display, TEXT("[INVENTARIO] coletado %s | %d/%d"), *Item.Name, InventoryItems.Num(), InventoryCapacity);
+    UE_LOG(LogTemp, Display, TEXT("[BAG] coletado %s | total sem limite=%d"), *Item.Name, InventoryItems.Num());
     return true;
+}
+
+void ANWCharacter::SortInventory()
+{
+    InventoryItems.Sort([](const FNWGeneratedItem& A, const FNWGeneratedItem& B)
+    {
+        const int32 KindA = A.Kind == ENWItemKind::Weapon ? 0 : (A.Kind == ENWItemKind::Armor ? 1 : 2);
+        const int32 KindB = B.Kind == ENWItemKind::Weapon ? 0 : (B.Kind == ENWItemKind::Armor ? 1 : 2);
+        if (KindA != KindB) { return KindA < KindB; }
+        if (A.Kind == ENWItemKind::Weapon && A.WeaponType != B.WeaponType) { return static_cast<int32>(A.WeaponType) < static_cast<int32>(B.WeaponType); }
+        if (A.Kind == ENWItemKind::Armor && A.Slot != B.Slot) { return static_cast<int32>(A.Slot) < static_cast<int32>(B.Slot); }
+        if (A.Rarity != B.Rarity) { return static_cast<int32>(A.Rarity) > static_cast<int32>(B.Rarity); }
+        return NWCombat::GetItemScore(A) > NWCombat::GetItemScore(B);
+    });
+    SelectedInventoryIndex = FMath::Clamp(SelectedInventoryIndex, 0, FMath::Max(0, InventoryItems.Num() - 1));
 }
 
 void ANWCharacter::EquipInventoryItemBySeed(int32 ItemSeed)
@@ -734,63 +846,156 @@ void ANWCharacter::EquipInventoryItemBySeed(int32 ItemSeed)
     const FNWGeneratedItem NewItem = InventoryItems[InventoryIndex];
     InventoryItems.RemoveAt(InventoryIndex);
 
+    if (NewItem.Kind == ENWItemKind::Consumable)
+    {
+        ConsumeItem(NewItem);
+        SortInventory();
+        ForceNetUpdate();
+        return;
+    }
+
+    if (NewItem.Kind == ENWItemKind::Weapon)
+    {
+        EquipWeaponItem(NewItem);
+        SortInventory();
+        RecalculateEquipmentStats();
+        ForceNetUpdate();
+        return;
+    }
+
     const int32 EquippedIndex = EquippedItems.IndexOfByPredicate([&NewItem](const FNWGeneratedItem& Item) { return Item.Slot == NewItem.Slot; });
     if (EquippedIndex != INDEX_NONE)
     {
         const FNWGeneratedItem OldItem = EquippedItems[EquippedIndex];
         EquippedItems[EquippedIndex] = NewItem;
-        if (InventoryItems.Num() < InventoryCapacity) { InventoryItems.Add(OldItem); }
+        InventoryItems.Add(OldItem);
     }
     else
     {
         EquippedItems.Add(NewItem);
     }
 
-    SelectedInventoryIndex = FMath::Clamp(SelectedInventoryIndex, 0, FMath::Max(0, InventoryItems.Num() - 1));
+    SortInventory();
     RecalculateEquipmentStats();
     ForceNetUpdate();
     UE_LOG(LogTemp, Display, TEXT("[EQUIP] %s equipado | classe %s | estilo %s"), *NewItem.Name, *NWCombat::ArmorWeightToString(NewItem.ArmorWeight), *NewItem.StyleId.ToString());
 }
 
+void ANWCharacter::EquipWeaponItem(const FNWGeneratedItem& NewItem)
+{
+    const bool bSecondarySlot = ActiveWeapon == SecondaryWeapon;
+    const int32 SlotIndex = bSecondarySlot ? 1 : 0;
+    while (EquippedWeaponItems.Num() < 2) { EquippedWeaponItems.AddDefaulted(); }
+
+    if (!EquippedWeaponItems[SlotIndex].Name.IsEmpty()) { InventoryItems.Add(EquippedWeaponItems[SlotIndex]); }
+    EquippedWeaponItems[SlotIndex] = NewItem;
+
+    if (bSecondarySlot) { SecondaryWeapon = NewItem.WeaponType; }
+    else { PrimaryWeapon = NewItem.WeaponType; }
+    ActiveWeapon = NewItem.WeaponType;
+
+    UE_LOG(LogTemp, Display, TEXT("[ARMA] %s equipada no slot %d"), *NewItem.Name, SlotIndex + 1);
+}
+
+void ANWCharacter::ConsumeItem(const FNWGeneratedItem& Item)
+{
+    if (Item.ConsumableType == ENWConsumableType::BrutalLegendaryTransformation)
+    {
+        ActivateBrutalTransformation();
+    }
+}
+
+void ANWCharacter::ActivateBrutalTransformation()
+{
+    if (!HasAuthority() || !GetWorld()) { return; }
+    bBrutalTransformationActive = true;
+    BrutalTransformationEndTime = GetWorld()->GetTimeSeconds() + 300.0f;
+    GetWorldTimerManager().ClearTimer(BrutalTransformationTimer);
+    GetWorldTimerManager().SetTimer(BrutalTransformationTimer, this, &ANWCharacter::EndBrutalTransformation, 300.0f, false);
+    RecalculateEquipmentStats();
+    Health = MaxHealth;
+    Stamina = MaxStamina;
+    ForceNetUpdate();
+    UE_LOG(LogTemp, Warning, TEXT("[METAMORFOSE] ARMADURA BRUTAL LENDARIA ativa por 300s."));
+}
+
+void ANWCharacter::EndBrutalTransformation()
+{
+    if (!HasAuthority()) { return; }
+    bBrutalTransformationActive = false;
+    BrutalTransformationEndTime = -1000.0f;
+    RecalculateEquipmentStats();
+    ForceNetUpdate();
+    UE_LOG(LogTemp, Warning, TEXT("[METAMORFOSE] Armadura Brutal Lendaria terminou."));
+}
+
 void ANWCharacter::EnsureStarterEquipment()
 {
-    if (!EquippedItems.IsEmpty()) { return; }
+    if (EquippedItems.IsEmpty())
+    {
+        FNWGeneratedItem Gloves;
+        Gloves.ItemSeed = 1001;
+        Gloves.ItemLevel = 1;
+        Gloves.AppearanceSeed = 11001;
+        Gloves.Name = TEXT("Luvas do Alquimista - Prototipo");
+        Gloves.Kind = ENWItemKind::Armor;
+        Gloves.Slot = ENWEquipmentSlot::Gloves;
+        Gloves.ArmorWeight = ENWArmorWeight::Medium;
+        Gloves.StyleId = TEXT("Battlemage");
+        Gloves.Rarity = ENWItemRarity::Rare;
+        Gloves.Affixes = { { ENWAffixType::PoisonCoating, 5.0f }, { ENWAffixType::ParryHeal, 3.0f } };
+        EquippedItems.Add(Gloves);
 
-    FNWGeneratedItem Gloves;
-    Gloves.ItemSeed = 1001;
-    Gloves.ItemLevel = 1;
-    Gloves.AppearanceSeed = 11001;
-    Gloves.Name = TEXT("Luvas do Alquimista - Prototipo");
-    Gloves.Slot = ENWEquipmentSlot::Gloves;
-    Gloves.ArmorWeight = ENWArmorWeight::Medium;
-    Gloves.StyleId = TEXT("Battlemage");
-    Gloves.Rarity = ENWItemRarity::Rare;
-    Gloves.Affixes = { { ENWAffixType::PoisonCoating, 5.0f }, { ENWAffixType::ParryHeal, 3.0f } };
-    EquippedItems.Add(Gloves);
+        FNWGeneratedItem Chest;
+        Chest.ItemSeed = 1002;
+        Chest.ItemLevel = 1;
+        Chest.AppearanceSeed = 11002;
+        Chest.Name = TEXT("Peitoral do Vanguardista - Prototipo");
+        Chest.Kind = ENWItemKind::Armor;
+        Chest.Slot = ENWEquipmentSlot::Chest;
+        Chest.ArmorWeight = ENWArmorWeight::Heavy;
+        Chest.StyleId = TEXT("IronVanguard");
+        Chest.Rarity = ENWItemRarity::Uncommon;
+        Chest.Affixes = { { ENWAffixType::Armor, 4.0f }, { ENWAffixType::Vitality, 3.0f }, { ENWAffixType::FortifiedGuard, 3.0f } };
+        EquippedItems.Add(Chest);
 
-    FNWGeneratedItem Chest;
-    Chest.ItemSeed = 1002;
-    Chest.ItemLevel = 1;
-    Chest.AppearanceSeed = 11002;
-    Chest.Name = TEXT("Peitoral do Vanguardista - Prototipo");
-    Chest.Slot = ENWEquipmentSlot::Chest;
-    Chest.ArmorWeight = ENWArmorWeight::Heavy;
-    Chest.StyleId = TEXT("IronVanguard");
-    Chest.Rarity = ENWItemRarity::Uncommon;
-    Chest.Affixes = { { ENWAffixType::Armor, 4.0f }, { ENWAffixType::Vitality, 3.0f }, { ENWAffixType::FortifiedGuard, 3.0f } };
-    EquippedItems.Add(Chest);
+        FNWGeneratedItem Boots;
+        Boots.ItemSeed = 1003;
+        Boots.ItemLevel = 1;
+        Boots.AppearanceSeed = 11003;
+        Boots.Name = TEXT("Botas do Vento - Prototipo");
+        Boots.Kind = ENWItemKind::Armor;
+        Boots.Slot = ENWEquipmentSlot::Boots;
+        Boots.ArmorWeight = ENWArmorWeight::Light;
+        Boots.StyleId = TEXT("Ranger");
+        Boots.Rarity = ENWItemRarity::Uncommon;
+        Boots.Affixes = { { ENWAffixType::DodgeEmpower, 3.0f }, { ENWAffixType::Haste, 2.0f } };
+        EquippedItems.Add(Boots);
+    }
 
-    FNWGeneratedItem Boots;
-    Boots.ItemSeed = 1003;
-    Boots.ItemLevel = 1;
-    Boots.AppearanceSeed = 11003;
-    Boots.Name = TEXT("Botas do Vento - Prototipo");
-    Boots.Slot = ENWEquipmentSlot::Boots;
-    Boots.ArmorWeight = ENWArmorWeight::Light;
-    Boots.StyleId = TEXT("Ranger");
-    Boots.Rarity = ENWItemRarity::Uncommon;
-    Boots.Affixes = { { ENWAffixType::DodgeEmpower, 3.0f }, { ENWAffixType::Haste, 2.0f } };
-    EquippedItems.Add(Boots);
+    if (EquippedWeaponItems.Num() < 2)
+    {
+        EquippedWeaponItems.Reset();
+        FNWGeneratedItem Greatsword;
+        Greatsword.ItemSeed = 2001;
+        Greatsword.Kind = ENWItemKind::Weapon;
+        Greatsword.WeaponType = ENWWeaponType::Greatsword;
+        Greatsword.Name = TEXT("Espada Grande do Recruta");
+        Greatsword.StyleId = TEXT("IronStarter");
+        Greatsword.Rarity = ENWItemRarity::Common;
+        Greatsword.Affixes = { { ENWAffixType::Power, 2.0f } };
+        EquippedWeaponItems.Add(Greatsword);
+
+        FNWGeneratedItem Staff;
+        Staff.ItemSeed = 2002;
+        Staff.Kind = ENWItemKind::Weapon;
+        Staff.WeaponType = ENWWeaponType::Staff;
+        Staff.Name = TEXT("Cajado Arcano do Recruta");
+        Staff.StyleId = TEXT("ArcaneStarter");
+        Staff.Rarity = ENWItemRarity::Common;
+        Staff.Affixes = { { ENWAffixType::Haste, 1.5f } };
+        EquippedWeaponItems.Add(Staff);
+    }
 }
 
 void ANWCharacter::RecalculateEquipmentStats()
@@ -821,21 +1026,91 @@ void ANWCharacter::RecalculateEquipmentStats()
     DodgeEmpowerMagnitude = GetAffixTotal(ENWAffixType::DodgeEmpower);
     BleedDamagePerTick = GetAffixTotal(ENWAffixType::Bleed) * 0.65f;
     ExecutionerMagnitude = GetAffixTotal(ENWAffixType::Executioner);
+    PassiveRangeMultiplier = 1.0f;
+    PassiveStatusMultiplier = 1.0f;
+
+    ApplyWeaponPassiveStats(PrimaryWeapon);
+    if (SecondaryWeapon != PrimaryWeapon) { ApplyWeaponPassiveStats(SecondaryWeapon); }
+
+    if (bBrutalTransformationActive)
+    {
+        MaxHealth += 120.0f;
+        MaxStamina += 35.0f;
+        DamageMultiplier *= 1.28f;
+        HealingMultiplier *= 1.15f;
+        ArmorValue += 65.0f;
+        LifeStealPercent += 0.05f;
+        GuardMagnitude += 12.0f;
+    }
+
+    PrecisionChance = FMath::Clamp(PrecisionChance, 0.0f, 0.48f);
+    LifeStealPercent = FMath::Clamp(LifeStealPercent, 0.0f, 0.28f);
+    CooldownMultiplier = FMath::Clamp(CooldownMultiplier, 0.48f, 1.0f);
 
     Health = FMath::Clamp(Health, 0.0f, MaxHealth);
     Stamina = FMath::Clamp(Stamina, 0.0f, MaxStamina);
 }
 
+void ANWCharacter::ApplyWeaponPassiveStats(ENWWeaponType WeaponType)
+{
+    switch (WeaponType)
+    {
+        case ENWWeaponType::Staff:
+            CooldownMultiplier *= 0.94f;
+            HealingMultiplier *= 1.08f;
+            PassiveStatusMultiplier *= 1.12f;
+            break;
+        case ENWWeaponType::Greatsword:
+            DamageMultiplier *= 1.08f;
+            MaxStamina += 10.0f;
+            ExecutionerMagnitude += 6.0f;
+            break;
+        case ENWWeaponType::DualSwords:
+            PrecisionChance += 0.06f;
+            DodgeEmpowerMagnitude += 5.0f;
+            LifeStealPercent += 0.03f;
+            break;
+        case ENWWeaponType::SwordShield:
+            ArmorValue += 14.0f;
+            GuardMagnitude += 10.0f;
+            ParryHealMagnitude += 3.0f;
+            MaxStamina += 5.0f;
+            break;
+        case ENWWeaponType::Daggers:
+            PrecisionChance += 0.08f;
+            PassiveStatusMultiplier *= 1.18f;
+            ExecutionerMagnitude += 7.2f;
+            break;
+        case ENWWeaponType::Bow:
+            PassiveRangeMultiplier *= 1.12f;
+            PassiveStatusMultiplier *= 1.10f;
+            PrecisionChance += 0.07f;
+            break;
+        case ENWWeaponType::Firearm:
+            DamageMultiplier *= 1.10f;
+            PrecisionChance += 0.06f;
+            CooldownMultiplier *= 0.95f;
+            break;
+        default:
+            break;
+    }
+}
+
 float ANWCharacter::GetAffixTotal(ENWAffixType AffixType) const
 {
     float Total = 0.0f;
-    for (const FNWGeneratedItem& Item : EquippedItems)
+    auto Accumulate = [&Total, AffixType](const TArray<FNWGeneratedItem>& Items)
     {
-        for (const FNWItemAffix& Affix : Item.Affixes)
+        for (const FNWGeneratedItem& Item : Items)
         {
-            if (Affix.Type == AffixType) { Total += Affix.Magnitude; }
+            for (const FNWItemAffix& Affix : Item.Affixes)
+            {
+                if (Affix.Type == AffixType) { Total += Affix.Magnitude; }
+            }
         }
-    }
+    };
+    Accumulate(EquippedItems);
+    Accumulate(EquippedWeaponItems);
     return Total;
 }
 
@@ -862,6 +1137,7 @@ float ANWCharacter::GetAbilityCooldownRemaining(int32 AbilityIndex) const
 
 FString ANWCharacter::GetCombatStateLabel() const
 {
+    if (bBrutalTransformationActive) { return TEXT("ARMADURA BRUTAL LENDARIA"); }
     if (CombatState == ENWCombatState::Blocking && GetWorld() && GetWorld()->GetTimeSeconds() <= ParryWindowEndTime) { return TEXT("GUARDA: JANELA DE PARRY"); }
     switch (CombatState)
     {
@@ -895,9 +1171,30 @@ FString ANWCharacter::GetActiveWeaponName() const
     return NWCombat::WeaponTypeToString(ActiveWeapon);
 }
 
+FString ANWCharacter::GetArrowElementLabel() const
+{
+    return ActiveWeapon == ENWWeaponType::Bow ? NWCombat::ArrowElementToString(ActiveArrowElement) : FString();
+}
+
+FString ANWCharacter::GetSelectedFastTravelLabel() const
+{
+    if (!GetWorld()) { return FString(); }
+    for (TActorIterator<ANWWorldEventDirector> It(GetWorld()); It; ++It)
+    {
+        return It->GetFastTravelDestinationName(SelectedFastTravelIndex);
+    }
+    return FString();
+}
+
+float ANWCharacter::GetBrutalTransformationRemaining() const
+{
+    if (!bBrutalTransformationActive || !GetWorld()) { return 0.0f; }
+    return FMath::Max(0.0f, BrutalTransformationEndTime - GetWorld()->GetTimeSeconds());
+}
+
 void ANWCharacter::LogLoadout() const
 {
-    UE_LOG(LogTemp, Display, TEXT("[LOADOUT] Slot 1=%s | Slot 2=%s | Ativa=%s"), *NWCombat::WeaponTypeToString(PrimaryWeapon), *NWCombat::WeaponTypeToString(SecondaryWeapon), *NWCombat::WeaponTypeToString(ActiveWeapon));
+    UE_LOG(LogTemp, Display, TEXT("[LOADOUT] Slot 1=%s | Slot 2=%s | Ativa=%s | Flecha=%s"), *NWCombat::WeaponTypeToString(PrimaryWeapon), *NWCombat::WeaponTypeToString(SecondaryWeapon), *NWCombat::WeaponTypeToString(ActiveWeapon), *NWCombat::ArrowElementToString(ActiveArrowElement));
 }
 
 void ANWCharacter::EnsureCombatHUD()
@@ -1049,15 +1346,19 @@ void ANWCharacter::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLife
     DOREPLIFETIME(ANWCharacter, PrimaryWeapon);
     DOREPLIFETIME(ANWCharacter, SecondaryWeapon);
     DOREPLIFETIME(ANWCharacter, ActiveWeapon);
+    DOREPLIFETIME(ANWCharacter, ActiveArrowElement);
     DOREPLIFETIME(ANWCharacter, CombatState);
     DOREPLIFETIME(ANWCharacter, EquippedItems);
+    DOREPLIFETIME(ANWCharacter, EquippedWeaponItems);
     DOREPLIFETIME(ANWCharacter, InventoryItems);
+    DOREPLIFETIME(ANWCharacter, bBrutalTransformationActive);
     DOREPLIFETIME_CONDITION(ANWCharacter, AbilityReadyTimes, COND_OwnerOnly);
 }
 
 void ANWCharacter::OnRep_Health() {}
-void ANWCharacter::OnRep_Loadout() { LogLoadout(); }
+void ANWCharacter::OnRep_Loadout() { RecalculateEquipmentStats(); LogLoadout(); }
 void ANWCharacter::OnRep_Equipment() { RecalculateEquipmentStats(); }
+void ANWCharacter::OnRep_BrutalTransformation() { RecalculateEquipmentStats(); }
 void ANWCharacter::OnRep_Inventory()
 {
     SelectedInventoryIndex = FMath::Clamp(SelectedInventoryIndex, 0, FMath::Max(0, InventoryItems.Num() - 1));
