@@ -303,8 +303,15 @@ Write-Host "  WASD       mover"
 Write-Host "  Mouse      camera"
 Write-Host "  Espaco     pular"
 Write-Host "  Shift      correr"
-Write-Host "  Mouse Esq. ataque corpo a corpo"
-Write-Host "  Q          habilidade universal em area"
-Write-Host "  R          gerar um novo epoch/mundo imediatamente"
+Write-Host "  Mouse Esq. ataque basico da arma ativa"
+Write-Host "  Q          habilidade ofensiva 1"
+Write-Host "  E          habilidade ofensiva 2"
+Write-Host "  C          habilidade de cura"
+Write-Host "  1 / 2      selecionar slot de arma"
+Write-Host "  F          troca rapida entre as duas armas"
+Write-Host "  Z / X      percorre familias dos slots 1 / 2 (debug)"
+Write-Host "  R          gerar novo epoch/mundo imediatamente"
 Write-Host ""
+Write-Host "Dica de combo: use Q/E, pressione F e encaixe Q/E da segunda arma em ate 2,5 s." -ForegroundColor Yellow
+Write-Host "O primeiro ataque de mobs contra as cidades comeca em ~20 s e repete a cada 55 s." -ForegroundColor Yellow
 Write-Host "O mundo tambem evolui automaticamente a cada 180 segundos." -ForegroundColor Green
