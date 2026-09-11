@@ -4,6 +4,7 @@
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
 #include "NWCharacter.h"
+#include "NWContentPresentationManager.h"
 #include "NWProceduralWorldManager.h"
 #include "NWWorldEventDirector.h"
 
@@ -30,6 +31,20 @@ void ANWGameMode::StartPlay()
             FActorSpawnParameters Params;
             Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
             GetWorld()->SpawnActor<ANWWorldEventDirector>(ANWWorldEventDirector::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+        }
+
+        bool bHasPresentationManager = false;
+        for (TActorIterator<ANWContentPresentationManager> It(GetWorld()); It; ++It)
+        {
+            bHasPresentationManager = true;
+            break;
+        }
+
+        if (!bHasPresentationManager)
+        {
+            FActorSpawnParameters Params;
+            Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+            GetWorld()->SpawnActor<ANWContentPresentationManager>(ANWContentPresentationManager::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
         }
     }
 
