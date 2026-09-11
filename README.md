@@ -2,73 +2,151 @@
 
 Codename de um action RPG 3D procedural em terceira pessoa, PvPvE, construido em Unreal Engine 5.8.
 
-> `New World 2` e um codename de desenvolvimento. O projeto nao reutiliza codigo, assets, historia, personagens, marcas ou conteudo do jogo New World. Antes de publicacao comercial, o produto deve receber nome e identidade proprios.
+> `New World 2` e um codename de desenvolvimento. O projeto nao reutiliza codigo, assets, historia, personagens, marcas ou conteudo de New World, Throne and Liberty ou qualquer outro jogo. Referencias servem apenas para direcao de genero/gameplay. Antes de publicacao comercial, o produto deve receber nome e identidade proprios.
 
 ## Objetivo
 
-Construir primeiro um vertical slice realmente jogavel e otimizado, sem custo obrigatorio de engine/assets/plugins, antes de aumentar o escopo para um mundo online maior.
+Construir um action RPG PvPvE com combate por armas, troca de loadout, itens procedurais e um mundo que se transforma ao longo do tempo, mantendo uma base tecnicamente viavel para hardware desde GTX 1650 ate GPUs modernas.
 
-Principios:
+Principios atuais:
 
-- sem level de personagem;
-- progressao horizontal;
-- habilidades independentes da arma equipada;
+- sem level tradicional de personagem;
+- progressao horizontal por equipamento, sinergias e dominio do loadout;
+- 2 armas equipadas simultaneamente;
+- 3 habilidades diferentes para cada familia de arma;
+- 2 habilidades ofensivas + 1 habilidade de cura por arma;
+- combo entre as duas armas quando habilidades sao encadeadas dentro da janela de combo;
+- equipamentos com raridade e afixos procedurais;
+- efeitos condicionais de equipamento capazes de modificar o combate;
 - PvE e PvP previstos desde o nucleo;
-- terreno, recursos, inimigos e futuramente itens gerados por regras/seeds;
-- mundo dividido em epochs, permitindo mudancas ao longo do tempo;
+- terreno, recursos, inimigos, assentamentos e populacao derivados de seed/epoch;
+- invasoes de mobs contra cidades/NPCs;
 - servidor autoritativo para gameplay;
-- escalabilidade grafica desde GTX 1650 ate GPUs modernas.
+- escalabilidade grafica e uso de instancing desde o prototipo.
 
-## Vertical slice 0.1
+## Vertical slice atual
 
-O repositorio ja contem:
+### Combate
 
-- personagem terceira pessoa;
-- WASD + camera por mouse;
-- pulo e sprint;
-- ataque corpo a corpo;
-- habilidade universal em area (`Q`);
-- vida/dano replicados;
-- mob PvE simples;
-- terreno procedural por Perlin noise;
-- arvores, rochas e cristais instanciados;
-- seed deterministica derivada do `WorldEpoch`;
-- mudanca automatica de mundo a cada 180 segundos;
-- tecla `R` para forcar novo epoch;
-- configuracao grafica inicial focada em escalabilidade;
-- script PowerShell para clone, build e execucao.
+Familias implementadas:
 
-A arte deste primeiro teste usa primitivas internas da Unreal de proposito. O objetivo agora e validar sistema, nao aparencia final.
+1. Cajado;
+2. Espada Grande de duas maos;
+3. Duas Espadas;
+4. Espada e Escudo;
+5. Adagas;
+6. Arco;
+7. Arma de Fogo.
+
+Cada arma possui:
+
+- ataque basico proprio;
+- habilidade ofensiva 1 (`Q`);
+- habilidade ofensiva 2 (`E`);
+- habilidade de cura (`C`);
+- cooldown base proximo de 3 segundos;
+- alcance/raio/potencia especificos;
+- compatibilidade propria com efeitos especiais.
+
+O personagem inicia com Espada Grande + Cajado. Para o prototipo, `Z` percorre as armas no slot 1 e `X` percorre as armas no slot 2, permitindo testar todas as familias antes de existir uma tela de inventario completa.
+
+### Combo entre armas
+
+Usar uma habilidade de uma arma, trocar para a outra e conectar outra habilidade dentro da janela de 2,5 segundos ativa multiplicador de combo. O prototipo usa +18% de dano no segundo golpe da sequencia.
+
+### Equipamentos e drops procedurais
+
+Mobs derrotados geram itens com:
+
+- seed propria;
+- slot de equipamento;
+- raridade;
+- de 1 a 3 afixos;
+- magnitudes procedurais.
+
+Afixos iniciais:
+
+- Poder;
+- Vitalidade;
+- Precisao;
+- Aceleracao;
+- Cura;
+- Revestimento Venenoso;
+- Roubo de Vida.
+
+O prototipo autoequipa um drop apenas quando sua pontuacao supera o item atual do mesmo slot. Inventario, pickup visual, comparador e descarte entram na proxima etapa.
+
+### Exemplo de sinergia: luvas venenosas
+
+O personagem inicia com `Luvas do Alquimista - Prototipo`, contendo `Revestimento Venenoso`.
+
+Quando a arma ativa e compativel, ataques e habilidades aplicam dano adicional por veneno durante 3 ticks. Compatibilidade inicial:
+
+- Espada Grande;
+- Duas Espadas;
+- Espada e Escudo;
+- Adagas;
+- Arco.
+
+Cajado e arma de fogo nao recebem esse efeito, deixando a regra preparada para sinergias especificas de build em vez de bonus universais.
+
+### Mundo vivo
+
+O mundo atual gera por seed/epoch:
+
+- terreno procedural;
+- 260 arvores;
+- 190 arbustos;
+- 110 rochas;
+- 40 recursos/cristais;
+- 26 mobs ambientais;
+- 2 assentamentos;
+- casas, muralhas e torres instanciadas;
+- 8 civis por assentamento.
+
+A cada epoch o layout e regenerado deterministicamente para servidor/clientes.
+
+### Invasoes
+
+- primeira onda: ~20 segundos apos iniciar;
+- recorrencia: ~55 segundos;
+- 10 invasores por assentamento;
+- inimigos priorizam jogador dentro do raio de aggro;
+- fora disso continuam atacando civis e o nucleo da cidade;
+- se o nucleo for rompido, ele e restaurado no prototipo para o teste continuar.
+
+## Visual
+
+A arquitetura esta sendo preparada para uma direcao realista, com:
+
+- vegetacao densa;
+- cidades e estruturas;
+- NPCs e populacao;
+- criaturas em grande quantidade;
+- materiais/iluminacao escalaveis;
+- LOD/HISM/streaming como requisitos de performance.
+
+A arte do vertical slice ainda usa primitivas internas da Unreal propositalmente. O passo seguinte e substituir os placeholders por assets gratuitos licenciados, personagens animados, foliage realista, materiais de terreno e VFX sem comprometer a meta de hardware.
 
 ## Requisitos Windows
 
 - Windows 10/11 64-bit;
 - Unreal Engine 5.8 instalada pelo Epic Games Launcher;
-- Visual Studio 2022 17.14+ ou Visual Studio 2026 com toolchain C++;
+- Visual Studio com toolchain C++ compativel;
 - Git;
 - GPU DirectX 12 recomendada.
 
-O script tenta instalar Git e Visual Studio Build Tools quando necessario. A Unreal Engine em si precisa ser instalada pelo fluxo suportado do Epic Games Launcher.
-
 ## Executar
-
-Abra PowerShell e execute o script completo disponibilizado em `scripts/clone-build-run.ps1`, ou salve/copiei esse arquivo para qualquer pasta e rode:
 
 ```powershell
 Set-ExecutionPolicy -Scope Process Bypass -Force
-& .\clone-build-run.ps1
+& .\scripts\clone-build-run.ps1
 ```
 
-Destino padrao:
-
-```text
-%USERPROFILE%\Documents\new-world2
-```
-
-Para informar manualmente onde a UE 5.8 esta instalada:
+Para informar a UE 5.8 manualmente:
 
 ```powershell
-& .\clone-build-run.ps1 -UERoot "D:\Epic Games\UE_5.8"
+& .\scripts\clone-build-run.ps1 -UERoot "D:\Epic Games\UE_5.8"
 ```
 
 ## Controles
@@ -79,43 +157,41 @@ Para informar manualmente onde a UE 5.8 esta instalada:
 | Mouse | camera |
 | Espaco | pular |
 | Shift | correr |
-| Mouse esquerdo | ataque |
-| Q | habilidade universal em area |
-| R | gerar novo epoch imediatamente |
+| Mouse esquerdo | ataque basico da arma atual |
+| Q | habilidade ofensiva 1 |
+| E | habilidade ofensiva 2 |
+| C | habilidade de cura |
+| 1 | selecionar arma do slot 1 |
+| 2 | selecionar arma do slot 2 |
+| F | alternar rapidamente entre as duas armas |
+| Z | trocar a familia da arma do slot 1 (debug) |
+| X | trocar a familia da arma do slot 2 (debug) |
+| R | gerar um novo epoch imediatamente |
 
-## Estrutura
+## Arquitetura relevante
 
 ```text
-new-world2/
-├─ Config/
-│  ├─ DefaultEngine.ini
-│  ├─ DefaultGame.ini
-│  └─ DefaultInput.ini
-├─ Content/
-├─ Source/
-│  ├─ NewWorld2.Target.cs
-│  ├─ NewWorld2Editor.Target.cs
-│  └─ NewWorld2/
-│     ├─ NewWorld2.Build.cs
-│     ├─ NewWorld2.cpp/.h
-│     ├─ NWGameMode.cpp/.h
-│     ├─ NWCharacter.cpp/.h
-│     ├─ NWEnemy.cpp/.h
-│     └─ NWProceduralWorldManager.cpp/.h
-├─ docs/
-│  ├─ GAME_DESIGN.md
-│  ├─ ARCHITECTURE.md
-│  ├─ PERFORMANCE_TARGETS.md
-│  ├─ FREE_CONTENT.md
-│  └─ ROADMAP.md
-├─ scripts/
-│  └─ clone-build-run.ps1
-└─ NewWorld2.uproject
+Source/NewWorld2/
+├─ NWCombatTypes.h
+├─ NWCombatLibrary.cpp/.h
+├─ NWCharacter.cpp/.h
+├─ NWEnemy.cpp/.h
+├─ NWCivilian.cpp/.h
+├─ NWSettlementCore.cpp/.h
+├─ NWProceduralWorldManager.cpp/.h
+└─ NWGameMode.cpp/.h
 ```
 
-## Proximos passos
+## Proximas etapas
 
-Consulte `docs/ROADMAP.md`. A ordem e intencional: combate -> mundo procedural por celulas -> itens/crafting -> multiplayer -> arte final -> persistencia/produto.
+1. HUD de habilidades/cooldowns/vida/arma ativa;
+2. animacoes reais, dodge, block, parry, stagger e hit reactions;
+3. inventario e loot visual no mundo;
+4. mais afixos e efeitos que alterem habilidades;
+5. personagens, foliage, construcoes e criaturas realistas usando conteudo gratuito licenciado;
+6. streaming/World Partition/PCG por celulas;
+7. perfis graficos e profiling em GTX 1650;
+8. multiplayer dedicado e persistencia.
 
 ## Licenca
 

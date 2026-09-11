@@ -3,9 +3,14 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/World.h"
+#include "EngineUtils.h"
+#include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "Net/UnrealNetwork.h"
+#include "NWCivilian.h"
+#include "NWCharacter.h"
+#include "NWSettlementCore.h"
 #include "UObject/ConstructorHelpers.h"
 
 ANWEnemy::ANWEnemy()
@@ -46,25 +51,19 @@ void ANWEnemy::Tick(float DeltaSeconds)
         return;
     }
 
-    APawn* TargetPawn = FindNearestPlayer();
-    if (!TargetPawn)
+    AActor* Target = FindBestTarget();
+    if (!Target)
     {
         return;
     }
 
-    const FVector ToTarget = TargetPawn->GetActorLocation() - GetActorLocation();
+    const FVector ToTarget = Target->GetActorLocation() - GetActorLocation();
     const float Distance2D = FVector(ToTarget.X, ToTarget.Y, 0.0f).Size();
-
-    if (Distance2D > DetectionRange)
-    {
-        return;
-    }
 
     if (Distance2D > AttackRange)
     {
-        FVector Direction = FVector(ToTarget.X, ToTarget.Y, 0.0f).GetSafeNormal();
-        const FVector Delta = Direction * MoveSpeed * DeltaSeconds;
-        SetActorLocation(GetActorLocation() + Delta, true);
+        const FVector Direction = FVector(ToTarget.X, ToTarget.Y, 0.0f).GetSafeNormal();
+        SetActorLocation(GetActorLocation() + Direction * MoveSpeed * DeltaSeconds, true);
 
         if (!Direction.IsNearlyZero())
         {
@@ -77,7 +76,7 @@ void ANWEnemy::Tick(float DeltaSeconds)
     if ((Now - LastAttackTime) >= AttackCooldown)
     {
         LastAttackTime = Now;
-        UGameplayStatics::ApplyDamage(TargetPawn, AttackDamage, GetController(), this, UDamageType::StaticClass());
+        UGameplayStatics::ApplyDamage(Target, AttackDamage, GetController(), this, UDamageType::StaticClass());
     }
 }
 
@@ -93,6 +92,12 @@ float ANWEnemy::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, 
     Health = FMath::Clamp(Health - AppliedDamage, 0.0f, MaxHealth);
     if (Health <= 0.0f)
     {
+        ANWCharacter* Killer = EventInstigator ? Cast<ANWCharacter>(EventInstigator->GetPawn()) : Cast<ANWCharacter>(DamageCauser);
+        if (Killer)
+        {
+            const int32 LootSeed = GetUniqueID() * 31 + FMath::RoundToInt(GetWorld()->GetTimeSeconds() * 100.0f);
+            Killer->ReceiveProceduralLoot(LootSeed);
+        }
         Destroy();
     }
 
@@ -109,15 +114,15 @@ void ANWEnemy::OnRep_Health()
 {
 }
 
-APawn* ANWEnemy::FindNearestPlayer() const
+AActor* ANWEnemy::FindBestTarget() const
 {
     if (!GetWorld())
     {
         return nullptr;
     }
 
-    APawn* BestPawn = nullptr;
-    float BestDistanceSq = TNumericLimits<float>::Max();
+    AActor* BestTarget = nullptr;
+    float BestScore = TNumericLimits<float>::Max();
 
     for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
     {
@@ -128,13 +133,38 @@ APawn* ANWEnemy::FindNearestPlayer() const
             continue;
         }
 
-        const float DistanceSq = FVector::DistSquared(GetActorLocation(), Pawn->GetActorLocation());
-        if (DistanceSq < BestDistanceSq)
+        const float Distance = FVector::Dist2D(GetActorLocation(), Pawn->GetActorLocation());
+        if (Distance <= PlayerAggroRange)
         {
-            BestDistanceSq = DistanceSq;
-            BestPawn = Pawn;
+            const float Score = Distance * 0.55f;
+            if (Score < BestScore)
+            {
+                BestScore = Score;
+                BestTarget = Pawn;
+            }
         }
     }
 
-    return BestPawn;
+    for (TActorIterator<ANWCivilian> It(GetWorld()); It; ++It)
+    {
+        const float Distance = FVector::Dist2D(GetActorLocation(), It->GetActorLocation());
+        if (Distance <= WorldTargetRange && Distance < BestScore)
+        {
+            BestScore = Distance;
+            BestTarget = *It;
+        }
+    }
+
+    for (TActorIterator<ANWSettlementCore> It(GetWorld()); It; ++It)
+    {
+        const float Distance = FVector::Dist2D(GetActorLocation(), It->GetActorLocation());
+        const float Score = Distance * 1.08f;
+        if (Distance <= WorldTargetRange && Score < BestScore)
+        {
+            BestScore = Score;
+            BestTarget = *It;
+        }
+    }
+
+    return BestTarget;
 }
