@@ -17,7 +17,8 @@ public class NewWorld2 : ModuleRules
             "AssetRegistry",
             "PCG",
             "NavigationSystem",
-            "AIModule"
+            "AIModule",
+            "Niagara"
         });
 
         PrivateDependencyModuleNames.AddRange(new string[]
