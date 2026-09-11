@@ -13,6 +13,28 @@ namespace
         Result.Cooldown = Cooldown;
         return Result;
     }
+
+    bool IsSlotCompatible(ENWEquipmentSlot Slot, ENWAffixType Type)
+    {
+        switch (Type)
+        {
+            case ENWAffixType::PoisonCoating:
+            case ENWAffixType::Firebrand:
+            case ENWAffixType::Frostbite:
+            case ENWAffixType::ShockChain:
+            case ENWAffixType::Bleed:
+                return Slot == ENWEquipmentSlot::Gloves;
+            case ENWAffixType::FortifiedGuard:
+            case ENWAffixType::Armor:
+                return Slot == ENWEquipmentSlot::Chest || Slot == ENWEquipmentSlot::Head;
+            case ENWAffixType::ParryHeal:
+                return Slot == ENWEquipmentSlot::Gloves || Slot == ENWEquipmentSlot::Chest;
+            case ENWAffixType::DodgeEmpower:
+                return Slot == ENWEquipmentSlot::Boots || Slot == ENWEquipmentSlot::Legs;
+            default:
+                return true;
+        }
+    }
 }
 
 FNWWeaponDefinition NWCombat::GetWeaponDefinition(ENWWeaponType WeaponType)
@@ -72,15 +94,127 @@ ENWWeaponType NWCombat::GetNextWeaponType(ENWWeaponType WeaponType)
 
 FString NWCombat::RarityToString(ENWItemRarity Rarity)
 {
-    switch (Rarity) { case ENWItemRarity::Common: return TEXT("Comum"); case ENWItemRarity::Uncommon: return TEXT("Incomum"); case ENWItemRarity::Rare: return TEXT("Raro"); case ENWItemRarity::Epic: return TEXT("Epico"); case ENWItemRarity::Legendary: return TEXT("Lendario"); default: return TEXT("Desconhecido"); }
+    switch (Rarity)
+    {
+        case ENWItemRarity::Common: return TEXT("Comum");
+        case ENWItemRarity::Uncommon: return TEXT("Incomum");
+        case ENWItemRarity::Rare: return TEXT("Raro");
+        case ENWItemRarity::Epic: return TEXT("Epico");
+        case ENWItemRarity::Legendary: return TEXT("Lendario");
+        default: return TEXT("Desconhecido");
+    }
 }
 
 FString NWCombat::EquipmentSlotToString(ENWEquipmentSlot Slot)
 {
-    switch (Slot) { case ENWEquipmentSlot::Head: return TEXT("Cabeca"); case ENWEquipmentSlot::Chest: return TEXT("Peitoral"); case ENWEquipmentSlot::Gloves: return TEXT("Luvas"); case ENWEquipmentSlot::Legs: return TEXT("Pernas"); case ENWEquipmentSlot::Boots: return TEXT("Botas"); default: return TEXT("Item"); }
+    switch (Slot)
+    {
+        case ENWEquipmentSlot::Head: return TEXT("Cabeca");
+        case ENWEquipmentSlot::Chest: return TEXT("Peitoral");
+        case ENWEquipmentSlot::Gloves: return TEXT("Luvas");
+        case ENWEquipmentSlot::Legs: return TEXT("Pernas");
+        case ENWEquipmentSlot::Boots: return TEXT("Botas");
+        default: return TEXT("Item");
+    }
 }
 
 FString NWCombat::AffixToString(ENWAffixType Affix)
 {
-    switch (Affix) { case ENWAffixType::Power: return TEXT("Poder"); case ENWAffixType::Vitality: return TEXT("Vitalidade"); case ENWAffixType::Precision: return TEXT("Precisao"); case ENWAffixType::Haste: return TEXT("Aceleracao"); case ENWAffixType::Healing: return TEXT("Cura"); case ENWAffixType::PoisonCoating: return TEXT("Revestimento Venenoso"); case ENWAffixType::LifeSteal: return TEXT("Roubo de Vida"); default: return TEXT("Atributo"); }
+    switch (Affix)
+    {
+        case ENWAffixType::Power: return TEXT("Poder");
+        case ENWAffixType::Vitality: return TEXT("Vitalidade");
+        case ENWAffixType::Precision: return TEXT("Precisao");
+        case ENWAffixType::Haste: return TEXT("Aceleracao");
+        case ENWAffixType::Healing: return TEXT("Cura");
+        case ENWAffixType::PoisonCoating: return TEXT("Revestimento Venenoso");
+        case ENWAffixType::LifeSteal: return TEXT("Roubo de Vida");
+        case ENWAffixType::Armor: return TEXT("Armadura");
+        case ENWAffixType::Firebrand: return TEXT("Marca de Fogo");
+        case ENWAffixType::Frostbite: return TEXT("Mordida Gelida");
+        case ENWAffixType::ShockChain: return TEXT("Corrente Eletrica");
+        case ENWAffixType::AbilityEcho: return TEXT("Eco de Habilidade");
+        case ENWAffixType::CooldownOnCrit: return TEXT("Ritmo Critico");
+        case ENWAffixType::FortifiedGuard: return TEXT("Guarda Fortificada");
+        case ENWAffixType::ParryHeal: return TEXT("Parry Restaurador");
+        case ENWAffixType::DodgeEmpower: return TEXT("Impulso da Esquiva");
+        case ENWAffixType::Bleed: return TEXT("Sangramento");
+        case ENWAffixType::Executioner: return TEXT("Executor");
+        default: return TEXT("Atributo");
+    }
+}
+
+FLinearColor NWCombat::RarityColor(ENWItemRarity Rarity)
+{
+    switch (Rarity)
+    {
+        case ENWItemRarity::Common: return FLinearColor(0.75f, 0.75f, 0.75f, 1.0f);
+        case ENWItemRarity::Uncommon: return FLinearColor(0.20f, 0.90f, 0.30f, 1.0f);
+        case ENWItemRarity::Rare: return FLinearColor(0.15f, 0.45f, 1.00f, 1.0f);
+        case ENWItemRarity::Epic: return FLinearColor(0.65f, 0.20f, 0.95f, 1.0f);
+        case ENWItemRarity::Legendary: return FLinearColor(1.00f, 0.55f, 0.05f, 1.0f);
+        default: return FLinearColor::White;
+    }
+}
+
+FNWGeneratedItem NWCombat::GenerateProceduralItem(int32 LootSeed, int32 WorldEpoch)
+{
+    FRandomStream Random(LootSeed ^ (WorldEpoch * 7919));
+    FNWGeneratedItem Item;
+    Item.ItemSeed = LootSeed;
+    Item.ItemLevel = FMath::Max(1, 1 + WorldEpoch / 3 + Random.RandRange(0, 2));
+    Item.Slot = static_cast<ENWEquipmentSlot>(Random.RandRange(0, 4));
+
+    const int32 RarityRoll = Random.RandRange(0, 999);
+    if (RarityRoll < 470) Item.Rarity = ENWItemRarity::Common;
+    else if (RarityRoll < 735) Item.Rarity = ENWItemRarity::Uncommon;
+    else if (RarityRoll < 900) Item.Rarity = ENWItemRarity::Rare;
+    else if (RarityRoll < 980) Item.Rarity = ENWItemRarity::Epic;
+    else Item.Rarity = ENWItemRarity::Legendary;
+
+    const int32 RarityLevel = static_cast<int32>(Item.Rarity) + 1;
+    const int32 AffixCount = FMath::Clamp(1 + (RarityLevel - 1) / 2 + (Item.Rarity == ENWItemRarity::Legendary ? 1 : 0), 1, 4);
+    TSet<ENWAffixType> UsedAffixes;
+
+    const int32 AffixTypeCount = static_cast<int32>(ENWAffixType::Executioner) + 1;
+    int32 Guard = 0;
+    while (Item.Affixes.Num() < AffixCount && Guard++ < 100)
+    {
+        const ENWAffixType Type = static_cast<ENWAffixType>(Random.RandRange(0, AffixTypeCount - 1));
+        if (UsedAffixes.Contains(Type) || !IsSlotCompatible(Item.Slot, Type)) { continue; }
+
+        FNWItemAffix Affix;
+        Affix.Type = Type;
+        const float Base = Random.FRandRange(1.2f, 3.2f) * (0.8f + RarityLevel * 0.42f) * (1.0f + Item.ItemLevel * 0.035f);
+        Affix.Magnitude = FMath::RoundToFloat(Base * 10.0f) / 10.0f;
+        Item.Affixes.Add(Affix);
+        UsedAffixes.Add(Type);
+    }
+
+    Item.Name = FString::Printf(TEXT("%s %s E%d [%04d]"), *RarityToString(Item.Rarity), *EquipmentSlotToString(Item.Slot), Item.ItemLevel, FMath::Abs(LootSeed % 10000));
+    return Item;
+}
+
+float NWCombat::GetItemScore(const FNWGeneratedItem& Item)
+{
+    float Score = Item.ItemLevel * 2.5f + (static_cast<int32>(Item.Rarity) + 1) * 12.0f;
+    for (const FNWItemAffix& Affix : Item.Affixes)
+    {
+        float Weight = 1.0f;
+        switch (Affix.Type)
+        {
+            case ENWAffixType::PoisonCoating:
+            case ENWAffixType::Firebrand:
+            case ENWAffixType::ShockChain:
+            case ENWAffixType::AbilityEcho:
+            case ENWAffixType::ParryHeal:
+            case ENWAffixType::DodgeEmpower:
+                Weight = 1.45f;
+                break;
+            default:
+                break;
+        }
+        Score += Affix.Magnitude * Weight;
+    }
+    return Score;
 }
