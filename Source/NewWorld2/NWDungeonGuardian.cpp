@@ -57,9 +57,10 @@ void ANWDungeonGuardian::SpawnLegendaryRewards(AController* EventInstigator, AAc
     }
 
     const int32 RewardCount = DungeonTier >= 4 ? 3 : 2;
+    const int32 BaseSeed = GetUniqueID() * 193 + DungeonTier * 1009 + FMath::RoundToInt(GetWorld()->GetTimeSeconds() * 10.0f);
     for (int32 Index = 0; Index < RewardCount; ++Index)
     {
-        const int32 Seed = GetUniqueID() * 193 + DungeonTier * 1009 + Index * 7919 + FMath::RoundToInt(GetWorld()->GetTimeSeconds() * 10.0f);
+        const int32 Seed = BaseSeed + Index * 7919;
         const FNWGeneratedItem Reward = NWCombat::GenerateLegendaryDungeonItem(Seed, Epoch + DungeonTier, DungeonTheme);
 
         const float Angle = (2.0f * PI * Index) / FMath::Max(1, RewardCount);
@@ -67,10 +68,20 @@ void ANWDungeonGuardian::SpawnLegendaryRewards(AController* EventInstigator, AAc
         FActorSpawnParameters Params;
         Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
         ANWLootPickup* Pickup = GetWorld()->SpawnActor<ANWLootPickup>(ANWLootPickup::StaticClass(), GetActorLocation() + Offset, FRotator::ZeroRotator, Params);
-        if (Pickup)
-        {
-            Pickup->InitializeLoot(Reward);
-        }
+        if (Pickup) { Pickup->InitializeLoot(Reward); }
+    }
+
+    // Guardioes de dungeon tem chance relevante, mas nao garantida, da metamorfose.
+    // World bosses espalhados no mapa continuam garantindo a pocao para recompensar o risco maior.
+    FRandomStream PotionRoll(BaseSeed ^ 0xB417A1);
+    if (PotionRoll.FRand() <= 0.35f)
+    {
+        const FNWGeneratedItem Potion = NWCombat::GenerateBrutalTransformationPotion(BaseSeed ^ 0x51A7B0, Epoch + DungeonTier);
+        FActorSpawnParameters Params;
+        Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        ANWLootPickup* PotionPickup = GetWorld()->SpawnActor<ANWLootPickup>(ANWLootPickup::StaticClass(), GetActorLocation() + FVector(0.0f, 0.0f, 135.0f), FRotator::ZeroRotator, Params);
+        if (PotionPickup) { PotionPickup->InitializeLoot(Potion); }
+        UE_LOG(LogTemp, Warning, TEXT("[DUNGEON] Pocao da Armadura Brutal Lendaria encontrada."));
     }
 
     UE_LOG(LogTemp, Warning, TEXT("[DUNGEON] Guardiao derrotado: %d recompensas lendarias do set %s."), RewardCount, *DungeonTheme.ToString());
