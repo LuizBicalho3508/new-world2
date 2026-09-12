@@ -5,6 +5,7 @@ public class NewWorld2 : ModuleRules
     public NewWorld2(ReadOnlyTargetRules Target) : base(Target)
     {
         PCHUsage = PCHUsageMode.UseExplicitOrSharedPCHs;
+        PrivatePCHHeaderFile = "NewWorld2PCH.h";
 
         // Compatibilidade temporaria: o codigo legado usa NEWORLD2_API,
         // mas o UnrealBuildTool gera NEWWORLD2_API para o modulo NewWorld2.
