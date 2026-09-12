@@ -51,12 +51,23 @@ ensure_packages() {
 
 sync_repo() {
   mkdir -p "$(dirname "$DESTINATION")"
+
   if [[ -d "$DESTINATION/.git" ]]; then
+    # No Linux o Git pode registrar chmod +x/-x como modificacao. O projeto executa
+    # scripts via `bash script.sh`, portanto o bit de execucao local nao deve sujar o repo.
+    git -C "$DESTINATION" config core.fileMode false
+
+    # Se houver mudancas REAIS em arquivos versionados, preserve-as em stash.
+    # Nao usamos -u/-a: Content Fab e outros arquivos nao versionados permanecem no lugar.
     if ! git -C "$DESTINATION" diff --quiet || ! git -C "$DESTINATION" diff --cached --quiet; then
-      echo "ERRO: existem alteracoes locais em arquivos versionados do projeto." >&2
-      echo "Conteudo Fab nao versionado e permitido; codigo/config versionados precisam estar limpos." >&2
-      exit 1
+      echo "Alteracoes reais em arquivos versionados foram encontradas:"
+      git -C "$DESTINATION" status --short --untracked-files=no || true
+      local stash_name="nw2-auto-bootstrap-$(date +%Y%m%d-%H%M%S)"
+      echo "Preservando essas alteracoes em git stash: $stash_name"
+      git -C "$DESTINATION" stash push -m "$stash_name" -- . >/dev/null
+      echo "OK: codigo/config local preservado. Assets Fab nao versionados nao foram tocados."
     fi
+
     git -C "$DESTINATION" fetch origin
     git -C "$DESTINATION" switch main
     git -C "$DESTINATION" pull --ff-only origin main
@@ -65,8 +76,8 @@ sync_repo() {
     exit 1
   else
     git clone "$REPO_URL" "$DESTINATION"
+    git -C "$DESTINATION" config core.fileMode false
   fi
-  chmod +x "$DESTINATION"/scripts/*.sh 2>/dev/null || true
 }
 
 is_ue58() {
@@ -109,15 +120,15 @@ extract_engine_zip() {
   mkdir -p "$ENGINE_INSTALL_BASE"
   local free_gb
   free_gb="$(df -Pk "$ENGINE_INSTALL_BASE" | awk 'NR==2 {printf "%d", $4/1024/1024}')"
-  echo "Espaco livre aproximado: ${free_gb} GB"
+  echo "Espaco livre aproximado: ${free_gb} GB" >&2
   (( free_gb >= 80 )) || echo "AVISO: menos de 80 GB livres. UE + caches + assets podem ocupar bastante espaco." >&2
 
   if [[ -e "$target" && ! -x "$target/Engine/Binaries/Linux/UnrealEditor" && -n "$(ls -A "$target" 2>/dev/null)" ]]; then
     echo "ERRO: $target ja existe mas nao parece uma UE valida. Renomeie/remova e rode novamente." >&2
-    exit 1
+    return 1
   fi
   if [[ ! -x "$target/Engine/Binaries/Linux/UnrealEditor" ]]; then
-    echo "Extraindo Unreal Engine 5.8 Linux para $target ..."
+    echo "Extraindo Unreal Engine 5.8 Linux para $target ..." >&2
     mkdir -p "$target"
     unzip -q "$zip" -d "$target"
   fi
@@ -147,10 +158,11 @@ persist_ue_root() {
 
 install_fab_if_downloaded() {
   local helper="$DESTINATION/scripts/install-fab-plugin-linux.sh" fab_zip
-  [[ -x "$helper" ]] || return 0
+  [[ -f "$helper" ]] || return 0
   fab_zip="$(find "$HOME/Downloads" "$HOME/Transferências" -maxdepth 1 -type f \( -iname 'Linux_Fab_5.8*.zip' -o -iname '*Fab*5.8*Linux*.zip' \) -print -quit 2>/dev/null || true)"
   if [[ -n "$fab_zip" ]]; then
-    "$helper" --ue-root "$UE_ROOT" --zip "$fab_zip"
+    echo "Fab ZIP detectado: $fab_zip"
+    bash "$helper" --ue-root "$UE_ROOT" --zip "$fab_zip"
   else
     echo "Plugin Fab Linux 5.8 ainda nao foi encontrado em Downloads (opcional para o primeiro boot)."
   fi
@@ -223,7 +235,11 @@ if [[ ! -f "$UE_ROOT/Engine/Plugins/Marketplace/Fab/Fab.uplugin" && ! -f "$UE_RO
 fi
 
 step "6/8 - VALIDANDO ASSETS FAB JA PRESENTES NO PROJETO"
-if (( SKIP_ASSET_CHECK )); then echo "Asset check ignorado."; else "$DESTINATION/scripts/verify-fab-assets-linux.sh" "$DESTINATION" || true; fi
+if (( SKIP_ASSET_CHECK )); then
+  echo "Asset check ignorado."
+elif [[ -f "$DESTINATION/scripts/verify-fab-assets-linux.sh" ]]; then
+  bash "$DESTINATION/scripts/verify-fab-assets-linux.sh" "$DESTINATION" || true
+fi
 
 step "7/8 - PREPARANDO TOOLCHAIN NATIVO"
 TOOLCHAIN="$UE_ROOT/Engine/Build/BatchFiles/Linux/SetupToolchain.sh"
@@ -238,6 +254,6 @@ else
 fi
 
 step "8/8 - COMPILANDO E ABRINDO O GAME"
-ARGS=(--destination "$DESTINATION" --ue-root "$UE_ROOT" --skip-toolchain)
+ARGS=(--destination "$DESTINATION" --ue-root "$UE_ROOT" --skip-toolchain --profile)
 (( SKIP_WORLD_PARTITION )) && ARGS+=(--skip-world-partition)
-exec "$DESTINATION/scripts/clone-build-run-linux.sh" "${ARGS[@]}"
+exec bash "$DESTINATION/scripts/clone-build-run-linux.sh" "${ARGS[@]}"
