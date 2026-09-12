@@ -73,8 +73,12 @@ find_ue() {
 step "1/7 - CLONANDO / ATUALIZANDO REPOSITORIO"
 mkdir -p "$(dirname "$DESTINATION")"
 if [[ -d "$DESTINATION/.git" ]]; then
+  # Evita falsos positivos no BigLinux causados apenas por chmod +x/-x.
+  git -C "$DESTINATION" config core.fileMode false
   if ! git -C "$DESTINATION" diff --quiet || ! git -C "$DESTINATION" diff --cached --quiet; then
-    echo "ERRO: ha alteracoes locais em arquivos versionados. Commit/stash antes de atualizar." >&2
+    echo "ERRO: ha alteracoes reais em arquivos versionados. O build normal nao as altera automaticamente." >&2
+    git -C "$DESTINATION" status --short --untracked-files=no >&2 || true
+    echo "Use scripts/first-test-biglinux.sh para preservar essas mudancas automaticamente em stash, ou commit/stash manualmente." >&2
     exit 1
   fi
   git -C "$DESTINATION" fetch origin
@@ -85,6 +89,7 @@ elif [[ -e "$DESTINATION" && -n "$(ls -A "$DESTINATION" 2>/dev/null)" ]]; then
   exit 1
 else
   git clone "$REPO_URL" "$DESTINATION"
+  git -C "$DESTINATION" config core.fileMode false
 fi
 PROJECT_FILE="$DESTINATION/NewWorld2.uproject"
 [[ -f "$PROJECT_FILE" ]] || { echo "ERRO: NewWorld2.uproject nao encontrado." >&2; exit 1; }
@@ -138,8 +143,7 @@ if (( SKIP_WP )); then
 else
   WP="$DESTINATION/scripts/prepare-worldpartition-linux.sh"
   if [[ -f "$WP" ]]; then
-    chmod +x "$WP"
-    if "$WP" --project-root "$DESTINATION" --ue-root "$UE_ROOT"; then
+    if bash "$WP" --project-root "$DESTINATION" --ue-root "$UE_ROOT"; then
       if [[ -f "$DESTINATION/Content/GeneratedWorld/NW2_OpenWorld.umap" ]]; then
         GAME_MAP='/Game/GeneratedWorld/NW2_OpenWorld?game=/Script/NewWorld2.NWGameMode'
       fi
