@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-set -euo pipefail
+set -Eeuo pipefail
 
 REPO_URL="https://github.com/LuizBicalho3508/new-world2.git"
 DESTINATION="${NW2_PROJECT_ROOT:-$HOME/Projetos/new-world2}"
@@ -8,6 +8,33 @@ ENGINE_INSTALL_BASE="${NW2_UE_INSTALL_ROOT:-$HOME/Aplicativos}"
 SKIP_SYSTEM_UPDATE=0
 SKIP_ASSET_CHECK=0
 SKIP_WORLD_PARTITION=0
+CURRENT_STEP="inicializacao"
+BOOTSTRAP_LOG="${NW2_BOOTSTRAP_LOG:-$HOME/nw2-bootstrap.log}"
+
+# Mantem um log completo fora do repositorio para que sobreviva a falhas, atualizacoes
+# do Git e encerramentos acidentais do terminal.
+mkdir -p "$(dirname "$BOOTSTRAP_LOG")"
+: > "$BOOTSTRAP_LOG"
+exec > >(tee -a "$BOOTSTRAP_LOG") 2>&1
+
+on_error() {
+  local rc=$?
+  local line="${BASH_LINENO[0]:-desconhecida}"
+  trap - ERR
+  echo
+  echo "============================================================"
+  echo " ERRO NO BOOTSTRAP"
+  echo "============================================================"
+  echo "Etapa: $CURRENT_STEP"
+  echo "Linha aproximada: $line"
+  echo "Exit code: $rc"
+  echo "Log completo: $BOOTSTRAP_LOG"
+  echo
+  echo "Para mostrar as ultimas 200 linhas depois:"
+  echo "tail -n 200 \"$BOOTSTRAP_LOG\""
+  exit "$rc"
+}
+trap on_error ERR
 
 usage() {
   cat <<USAGE
@@ -31,7 +58,13 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-step() { echo; echo "============================================================"; echo " $*"; echo "============================================================"; }
+step() {
+  CURRENT_STEP="$*"
+  echo
+  echo "============================================================"
+  echo " $*"
+  echo "============================================================"
+}
 
 is_biglinux() {
   [[ -f /etc/os-release ]] || return 1
@@ -185,6 +218,8 @@ preflight_vulkan() {
 printf '============================================================\n'
 printf ' NEW WORLD 2 - BIGLINUX - PRIMEIRA INSTALACAO E TESTE\n'
 printf '============================================================\n'
+printf ' Log persistente: %s\n' "$BOOTSTRAP_LOG"
+printf ' Inicio: %s\n' "$(date --iso-8601=seconds)"
 
 step "1/8 - IDENTIFICANDO BIGLINUX E INSTALANDO DEPENDENCIAS"
 if is_biglinux; then grep -E '^(NAME|PRETTY_NAME|ID|ID_LIKE)=' /etc/os-release || true; else echo "AVISO: BigLinux nao confirmado; continuarei se houver pacman."; fi
@@ -256,4 +291,16 @@ fi
 step "8/8 - COMPILANDO E ABRINDO O GAME"
 ARGS=(--destination "$DESTINATION" --ue-root "$UE_ROOT" --skip-toolchain --profile)
 (( SKIP_WORLD_PARTITION )) && ARGS+=(--skip-world-partition)
-exec bash "$DESTINATION/scripts/clone-build-run-linux.sh" "${ARGS[@]}"
+
+# Nao usamos exec aqui: se o build/game falhar, este bootstrap ainda consegue registrar
+# a etapa, o exit code e o caminho do log antes de devolver o controle ao terminal.
+bash "$DESTINATION/scripts/clone-build-run-linux.sh" "${ARGS[@]}"
+FINAL_STATUS=$?
+
+echo
+echo "============================================================"
+echo " BOOTSTRAP FINALIZADO"
+echo "============================================================"
+echo "Exit code: $FINAL_STATUS"
+echo "Log completo: $BOOTSTRAP_LOG"
+exit "$FINAL_STATUS"
