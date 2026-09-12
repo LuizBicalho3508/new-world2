@@ -19,6 +19,8 @@ ANWCivilian::ANWCivilian()
     MinNetUpdateFrequency = 2.0f;
 
     GetCapsuleComponent()->InitCapsuleSize(38.0f, 86.0f);
+    GetMesh()->bEnableUpdateRateOptimizations = true;
+    GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
 
     BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
     BodyMesh->SetupAttachment(GetCapsuleComponent());
