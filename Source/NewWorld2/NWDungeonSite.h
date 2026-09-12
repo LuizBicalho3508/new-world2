@@ -65,11 +65,12 @@ private:
     UPROPERTY(ReplicatedUsing=OnRep_DungeonConfiguration, EditAnywhere, Category="Dungeon", meta=(ClampMin="1", ClampMax="10"))
     int32 DungeonTier = 2;
 
+    // CPU-saver: dungeons continuam povoadas, mas sem manter dezenas de Characters pensando fora da tela.
     UPROPERTY(EditAnywhere, Category="Dungeon")
-    int32 RegularEnemyCount = 16;
+    int32 RegularEnemyCount = 10;
 
     UPROPERTY(EditAnywhere, Category="Dungeon")
-    int32 GuardianCount = 2;
+    int32 GuardianCount = 1;
 
     UPROPERTY(Transient)
     TArray<TObjectPtr<ANWEnemy>> SpawnedEnemies;

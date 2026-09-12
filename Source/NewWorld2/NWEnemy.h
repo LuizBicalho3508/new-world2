@@ -52,6 +52,15 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category="AI")
     float WorldTargetRange = 9000.0f;
 
+    UPROPERTY(EditDefaultsOnly, Category="AI|Performance")
+    float SleepDistanceFromPlayers = 5200.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category="AI|Performance")
+    float NormalThinkInterval = 0.10f;
+
+    UPROPERTY(EditDefaultsOnly, Category="AI|Performance")
+    float SleepingThinkInterval = 0.50f;
+
     UPROPERTY(EditDefaultsOnly, Category="Combat")
     float AttackRange = 175.0f;
 
@@ -78,12 +87,15 @@ protected:
 
 private:
     AActor* FindBestTarget() const;
+    float GetNearestPlayerDistance() const;
     void ApplyArchetypeStats();
     void SpawnProceduralLoot(AController* EventInstigator, AActor* DamageCauser);
     void SpawnLootItem(const FNWGeneratedItem& Item, const FVector& Offset);
     void TryApplyLicensedCreatureVisual();
     class USkeletalMesh* FindInstalledCreatureMesh(const TArray<FString>& Keywords) const;
 
+    TWeakObjectPtr<AActor> CachedTarget;
+    float NextTargetRefreshTime = -1000.0f;
     float LastAttackTime = -1000.0f;
     float StaggeredUntilTime = -1000.0f;
 };

@@ -6,14 +6,35 @@ DESTINATION="$HOME/Projetos/new-world2"
 UE_ROOT="${UE_ROOT:-}"
 SKIP_WP=0
 SKIP_TOOLCHAIN=0
+PROFILE=0
+MAX_PARALLEL_ACTIONS=3
+FPS_LIMIT=45
+RES_X=1920
+RES_Y=1080
 
-usage() { echo "Uso: $0 [--destination PATH] [--ue-root PATH] [--skip-world-partition] [--skip-toolchain]"; }
+usage() {
+  echo "Uso: $0 [--destination PATH] [--ue-root PATH] [--skip-world-partition] [--skip-toolchain] [--profile] [--fps N] [--max-parallel N] [--resolution WIDTHxHEIGHT]"
+}
+
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --destination) DESTINATION="$2"; shift 2 ;;
     --ue-root) UE_ROOT="$2"; shift 2 ;;
     --skip-world-partition) SKIP_WP=1; shift ;;
     --skip-toolchain) SKIP_TOOLCHAIN=1; shift ;;
+    --profile) PROFILE=1; shift ;;
+    --fps) FPS_LIMIT="$2"; shift 2 ;;
+    --max-parallel) MAX_PARALLEL_ACTIONS="$2"; shift 2 ;;
+    --resolution)
+      if [[ "$2" =~ ^([0-9]+)x([0-9]+)$ ]]; then
+        RES_X="${BASH_REMATCH[1]}"
+        RES_Y="${BASH_REMATCH[2]}"
+      else
+        echo "Resolucao invalida: $2. Use por exemplo 1920x1080." >&2
+        exit 2
+      fi
+      shift 2
+      ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Argumento desconhecido: $1" >&2; usage; exit 2 ;;
   esac
@@ -107,7 +128,8 @@ else
 fi
 
 step "5/7 - COMPILANDO NEWWORLD2EDITOR PARA LINUX"
-"$BUILD_SH" NewWorld2Editor Linux Development "$PROJECT_FILE" -WaitMutex -NoHotReloadFromIDE
+echo "MaxParallelActions=$MAX_PARALLEL_ACTIONS (perfil 16 GB RAM / CPU antiga)"
+nice -n 5 "$BUILD_SH" NewWorld2Editor Linux Development "$PROJECT_FILE" -WaitMutex -NoHotReloadFromIDE "-MaxParallelActions=$MAX_PARALLEL_ACTIONS"
 
 GAME_MAP='/Engine/Maps/Entry?game=/Script/NewWorld2.NWGameMode'
 step "6/7 - PREPARANDO WORLD PARTITION"
@@ -130,11 +152,22 @@ fi
 step "7/7 - INICIANDO TESTE JOGAVEL LINUX"
 mkdir -p "$DESTINATION/Saved/Logs"
 LOG_FILE="$DESTINATION/Saved/Logs/first-test-linux-console.log"
+if (( PROFILE )); then
+  EXEC_CMDS="t.MaxFPS $FPS_LIMIT,stat unit,stat game,stat gpu,stat fps"
+  echo "PROFILE ATIVO: observe Game, Draw, GPU e Frame na tela."
+else
+  EXEC_CMDS="t.MaxFPS $FPS_LIMIT,stat unit,stat fps"
+fi
+
+echo "Perfil: CPU-saver + GPU-quality | ${RES_X}x${RES_Y} | ${FPS_LIMIT} FPS | Vulkan SM6"
 echo "Log: $LOG_FILE"
 echo "Feche a janela do jogo para retornar ao terminal."
 echo
 set +e
-"$EDITOR" "$PROJECT_FILE" "$GAME_MAP" -game -log -stdout -FullStdOutLogOutput -vulkan -windowed -ResX=1280 -ResY=720 '-ExecCmds=stat fps' 2>&1 | tee "$LOG_FILE"
+"$EDITOR" "$PROJECT_FILE" "$GAME_MAP" \
+  -game -log -stdout -FullStdOutLogOutput \
+  -vulkan -sm6 -windowed -ResX="$RES_X" -ResY="$RES_Y" \
+  -NoVSync "-ExecCmds=$EXEC_CMDS" 2>&1 | tee "$LOG_FILE"
 GAME_STATUS=${PIPESTATUS[0]}
 set -e
 exit "$GAME_STATUS"

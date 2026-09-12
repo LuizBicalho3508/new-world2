@@ -100,6 +100,7 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category="Generation")
     float TerrainAmplitude = 900.0f;
 
+    // Instanced meshes ficam altos de proposito: HISM e muito mais barato que dezenas de Actors/AI.
     UPROPERTY(EditDefaultsOnly, Category="Generation")
     int32 TreeCount = 260;
 
@@ -112,17 +113,18 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category="Generation")
     int32 CrystalCount = 40;
 
+    // Perfil para CPU antiga: menos Actors com Tick permanente.
     UPROPERTY(EditDefaultsOnly, Category="Generation")
-    int32 AmbientEnemyCount = 26;
+    int32 AmbientEnemyCount = 14;
 
     UPROPERTY(EditDefaultsOnly, Category="Settlements")
-    int32 CiviliansPerSettlement = 8;
+    int32 CiviliansPerSettlement = 4;
 
     UPROPERTY(EditDefaultsOnly, Category="Settlements")
-    int32 InvasionWaveSizePerSettlement = 10;
+    int32 InvasionWaveSizePerSettlement = 6;
 
     UPROPERTY(EditDefaultsOnly, Category="Settlements", meta=(ClampMin="15.0"))
-    float InvasionIntervalSeconds = 55.0f;
+    float InvasionIntervalSeconds = 75.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="Evolution", meta=(ClampMin="30.0"))
     float EvolutionIntervalSeconds = 180.0f;

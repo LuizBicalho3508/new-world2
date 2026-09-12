@@ -12,11 +12,15 @@
 ANWCivilian::ANWCivilian()
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.TickInterval = 0.10f;
+    PrimaryActorTick.TickInterval = 0.20f;
     bReplicates = true;
     SetReplicateMovement(true);
+    NetUpdateFrequency = 5.0f;
+    MinNetUpdateFrequency = 2.0f;
 
     GetCapsuleComponent()->InitCapsuleSize(38.0f, 86.0f);
+    GetMesh()->bEnableUpdateRateOptimizations = true;
+    GetMesh()->VisibilityBasedAnimTickOption = EVisibilityBasedAnimTickOption::OnlyTickPoseWhenRendered;
 
     BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
     BodyMesh->SetupAttachment(GetCapsuleComponent());

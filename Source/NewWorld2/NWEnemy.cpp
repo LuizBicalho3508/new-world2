@@ -26,11 +26,12 @@
 ANWEnemy::ANWEnemy()
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.TickInterval = 0.05f;
+    PrimaryActorTick.TickInterval = 0.10f;
 
     bReplicates = true;
     SetReplicateMovement(true);
-    NetUpdateFrequency = 20.0f;
+    NetUpdateFrequency = 10.0f;
+    MinNetUpdateFrequency = 4.0f;
 
     GetCapsuleComponent()->InitCapsuleSize(42.0f, 88.0f);
 
@@ -59,6 +60,14 @@ void ANWEnemy::ConfigureEnemy(ENWEnemyArchetype InArchetype, bool bInWorldBoss, 
     bWorldBoss = bInWorldBoss;
     BossTier = FMath::Clamp(InBossTier, 1, 8);
     ApplyArchetypeStats();
+
+    // Bosses continuam responsivos; mobs comuns usam frequencia menor para poupar Game Thread.
+    PrimaryActorTick.TickInterval = bWorldBoss ? 0.08f : NormalThinkInterval;
+    NetUpdateFrequency = bWorldBoss ? 15.0f : 10.0f;
+    MinNetUpdateFrequency = bWorldBoss ? 7.5f : 4.0f;
+    CachedTarget.Reset();
+    NextTargetRefreshTime = -1000.0f;
+
     if (HasAuthority())
     {
         Health = MaxHealth;
@@ -123,8 +132,28 @@ void ANWEnemy::Tick(float DeltaSeconds)
         return;
     }
 
-    AActor* Target = FindBestTarget();
-    if (!Target) { return; }
+    // AI LOD: mobs fora da area relevante de qualquer jogador deixam de simular combate/movimento.
+    // A malha continua existindo/replicada, mas a CPU deixa de fazer buscas de alvo a 20 Hz.
+    const float NearestPlayerDistance = GetNearestPlayerDistance();
+    if (!bWorldBoss && NearestPlayerDistance > SleepDistanceFromPlayers)
+    {
+        PrimaryActorTick.TickInterval = SleepingThinkInterval;
+        CachedTarget.Reset();
+        NextTargetRefreshTime = Now + SleepingThinkInterval;
+        return;
+    }
+
+    PrimaryActorTick.TickInterval = bWorldBoss ? 0.08f : NormalThinkInterval;
+
+    const float TargetRefreshInterval = bWorldBoss ? 0.12f : 0.25f;
+    if (Now >= NextTargetRefreshTime || !CachedTarget.IsValid())
+    {
+        CachedTarget = FindBestTarget();
+        NextTargetRefreshTime = Now + TargetRefreshInterval;
+    }
+
+    AActor* Target = CachedTarget.Get();
+    if (!IsValid(Target)) { return; }
 
     const FVector ToTarget = Target->GetActorLocation() - GetActorLocation();
     const float Distance2D = FVector(ToTarget.X, ToTarget.Y, 0.0f).Size();
@@ -305,6 +334,21 @@ void ANWEnemy::OnRep_EnemyIdentity()
 {
     ApplyArchetypeStats();
     TryApplyLicensedCreatureVisual();
+}
+
+float ANWEnemy::GetNearestPlayerDistance() const
+{
+    if (!GetWorld()) { return TNumericLimits<float>::Max(); }
+
+    float BestDistance = TNumericLimits<float>::Max();
+    for (FConstPlayerControllerIterator It = GetWorld()->GetPlayerControllerIterator(); It; ++It)
+    {
+        const APlayerController* PC = It->Get();
+        const APawn* Pawn = PC ? PC->GetPawn() : nullptr;
+        if (!Pawn) { continue; }
+        BestDistance = FMath::Min(BestDistance, FVector::Dist2D(GetActorLocation(), Pawn->GetActorLocation()));
+    }
+    return BestDistance;
 }
 
 AActor* ANWEnemy::FindBestTarget() const
