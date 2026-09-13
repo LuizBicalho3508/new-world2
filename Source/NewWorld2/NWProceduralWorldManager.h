@@ -20,6 +20,14 @@ class USkyAtmosphereComponent;
 class USkyLightComponent;
 class UStaticMesh;
 
+/**
+ * V9 hybrid world manager.
+ *
+ * The macro geography is deterministic and stable between epochs: terrain,
+ * travel corridors and settlement pads do not move under the player anymore.
+ * Runtime/procedural systems are kept for encounters, invasions and inexpensive
+ * micro-detail only.
+ */
 UCLASS()
 class NEWORLD2_API ANWProceduralWorldManager : public AActor
 {
@@ -37,10 +45,26 @@ public:
     float GetTerrainHeightAt(float X, float Y) const;
 
     UFUNCTION(BlueprintPure, Category="World")
+    FVector GetTerrainNormalAt(float X, float Y) const;
+
+    /** 0 = outside authored path, 1 = path core. */
+    UFUNCTION(BlueprintPure, Category="World")
+    float GetTravelPathInfluence(float X, float Y) const;
+
+    UFUNCTION(BlueprintPure, Category="World")
+    bool IsInsideSettlementClearance(float X, float Y, float ExtraRadius = 0.0f) const;
+
+    UFUNCTION(BlueprintPure, Category="World")
+    TArray<FVector2D> GetStableSettlementCenters() const;
+
+    UFUNCTION(BlueprintPure, Category="World")
     float GetTerrainHalfExtent() const { return TerrainResolution * TerrainCellSize * 0.5f; }
 
     UFUNCTION(BlueprintPure, Category="World")
     int32 GetWorldEpoch() const { return WorldEpoch; }
+
+    UFUNCTION(BlueprintPure, Category="World")
+    bool IsHybridMacroWorld() const { return bUseHybridMacroWorld; }
 
     void DisableAutomaticEvolution()
     {
@@ -84,8 +108,9 @@ protected:
     UPROPERTY(EditAnywhere, Category="PCG")
     TSoftObjectPtr<UPCGGraphInterface> RuntimePCGGraph;
 
+    /** PCG remains available for authored micro-detail, not macro geography. */
     UPROPERTY(EditAnywhere, Category="PCG")
-    bool bEnableRuntimePartitionedPCG = true;
+    bool bEnableRuntimePartitionedPCG = false;
 
     UPROPERTY(EditAnywhere, Category="Visual")
     bool bAutoDiscoverInstalledFreeAssets = false;
@@ -103,28 +128,38 @@ protected:
     TObjectPtr<UExponentialHeightFogComponent> HeightFog;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation", meta=(ClampMin="16", ClampMax="160"))
-    int32 TerrainResolution = 64;
+    int32 TerrainResolution = 72;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation", meta=(ClampMin="100.0", ClampMax="1000.0"))
-    float TerrainCellSize = 300.0f;
+    float TerrainCellSize = 260.0f;
+
+    /** V9 uses a calmer macro relief; local variation comes from meshes/materials. */
+    UPROPERTY(EditDefaultsOnly, Category="Generation", meta=(ClampMin="100.0", ClampMax="1400.0"))
+    float TerrainAmplitude = 570.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation")
-    float TerrainAmplitude = 900.0f;
+    int32 TreeCount = 120;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation")
-    int32 TreeCount = 160;
+    int32 BushCount = 80;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation")
-    int32 BushCount = 110;
+    int32 RockCount = 54;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation")
-    int32 RockCount = 65;
-
-    UPROPERTY(EditDefaultsOnly, Category="Generation")
-    int32 CrystalCount = 24;
+    int32 CrystalCount = 18;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation")
     int32 AmbientEnemyCount = 8;
+
+    UPROPERTY(EditDefaultsOnly, Category="Hybrid World")
+    bool bUseHybridMacroWorld = true;
+
+    UPROPERTY(EditDefaultsOnly, Category="Hybrid World", meta=(ClampMin="200.0", ClampMax="1400.0"))
+    float TravelPathHalfWidth = 520.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category="Hybrid World", meta=(ClampMin="700.0", ClampMax="2600.0"))
+    float SettlementFlattenRadius = 1450.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="Settlements")
     int32 CiviliansPerSettlement = 3;
@@ -162,9 +197,13 @@ private:
     UStaticMesh* FindInstalledStaticMesh(const TArray<FName>& Roots, const TArray<FString>& Keywords) const;
 
     float SampleHeight(float X, float Y) const;
+    float SampleRawMacroHeight(float X, float Y) const;
+    float DistanceToTravelNetwork(float X, float Y) const;
+    float DistanceToSegment2D(const FVector2D& P, const FVector2D& A, const FVector2D& B) const;
     FVector2D RandomGroundPoint(FRandomStream& Random, float HalfWorld, float MinimumCenterDistance) const;
     TArray<FVector2D> GetSettlementCenters() const;
     int32 GetWorldSeed() const;
+    int32 GetMacroWorldSeed() const { return 1337; }
 
     UPROPERTY(Transient)
     TArray<TObjectPtr<ANWEnemy>> SpawnedEnemies;
