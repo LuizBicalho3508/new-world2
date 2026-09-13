@@ -88,8 +88,10 @@ private:
     UPROPERTY(EditDefaultsOnly, Category="World|Biomes", meta=(ClampMin="1000.0"))
     float BiomeCellSize = 4800.0f;
 
+    // Dois bosses simultaneos preservam a exploracao aleatoria e reduzem o custo
+    // de AI/replicacao do primeiro playtest em hardware com CPU limitada.
     UPROPERTY(EditDefaultsOnly, Category="World|Bosses", meta=(ClampMin="1", ClampMax="6"))
-    int32 DesiredWorldBossCount = 3;
+    int32 DesiredWorldBossCount = 2;
 
     TArray<FString> FastTravelNames;
     TArray<FVector> FastTravelLocations;

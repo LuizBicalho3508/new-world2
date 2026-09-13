@@ -12,7 +12,9 @@
 ANWLootPickup::ANWLootPickup()
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.TickInterval = 0.03f;
+    // Movimento visual de loot nao precisa atualizar a 33 Hz. 15 Hz reduz custo
+    // quando varios drops ficam no chao sem alterar colisao/interacao.
+    PrimaryActorTick.TickInterval = 0.066f;
     bReplicates = true;
     SetReplicateMovement(true);
 

@@ -10,6 +10,7 @@
 #include "Modules/ModuleManager.h"
 #include "NWCharacter.h"
 #include "NWContentPresentationManager.h"
+#include "NWEnemy.h"
 #include "NWFabExpansionPresentationManager.h"
 #include "NWGameplaySafetyActor.h"
 #include "NWLightingSafetyActor.h"
@@ -160,6 +161,11 @@ void ANWGameMode::StartPlay()
     }
 
     Super::StartPlay();
+
+    // Depois que BeginPlay foi disparado para o mundo, garantimos um pequeno grupo
+    // proximo ao spawn. Assim o primeiro teste valida locomocao, aggro, dano, skills
+    // e loot sem obrigar o jogador a atravessar varios quilometros do mapa.
+    SpawnPlaytestEncounter();
 }
 
 void ANWGameMode::RestartPlayer(AController* NewPlayer)
@@ -176,6 +182,90 @@ void ANWGameMode::RestartPlayer(AController* NewPlayer)
     const FTransform SpawnTransform(FRotator(0.0f, 0.0f, 0.0f), FVector(SpawnX, SpawnY, SpawnZ));
 
     RestartPlayerAtTransform(NewPlayer, SpawnTransform);
+}
+
+void ANWGameMode::SpawnPlaytestEncounter()
+{
+    if (!GetWorld())
+    {
+        return;
+    }
+
+    ANWProceduralWorldManager* Manager = EnsureWorldManager();
+    if (!Manager)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[PLAYTEST] encontro inicial ignorado: WorldManager indisponivel."));
+        return;
+    }
+
+    const FVector SpawnCenter(900.0f, 900.0f, 0.0f);
+    constexpr float EncounterRadius = 1650.0f;
+    int32 NearbyRegularEnemies = 0;
+
+    for (TActorIterator<ANWEnemy> It(GetWorld()); It; ++It)
+    {
+        ANWEnemy* Enemy = *It;
+        if (!IsValid(Enemy) || Enemy->IsWorldBoss())
+        {
+            continue;
+        }
+
+        FVector Delta = Enemy->GetActorLocation() - SpawnCenter;
+        Delta.Z = 0.0f;
+        if (Delta.SizeSquared() <= FMath::Square(EncounterRadius))
+        {
+            ++NearbyRegularEnemies;
+        }
+    }
+
+    const int32 Needed = FMath::Max(0, 3 - NearbyRegularEnemies);
+    if (Needed <= 0)
+    {
+        UE_LOG(LogTemp, Display, TEXT("[PLAYTEST] READY | %d inimigos ja estavam proximos ao spawn."), NearbyRegularEnemies);
+        return;
+    }
+
+    struct FEncounterSpawn
+    {
+        ENWEnemyArchetype Archetype;
+        FVector2D Offset;
+    };
+
+    const FEncounterSpawn Spawns[] = {
+        { ENWEnemyArchetype::Zombie, FVector2D(780.0f, 160.0f) },
+        { ENWEnemyArchetype::Ghost, FVector2D(-650.0f, 520.0f) },
+        { ENWEnemyArchetype::Brute, FVector2D(260.0f, -820.0f) }
+    };
+
+    int32 Spawned = 0;
+    for (const FEncounterSpawn& Entry : Spawns)
+    {
+        if (Spawned >= Needed)
+        {
+            break;
+        }
+
+        const float X = SpawnCenter.X + Entry.Offset.X;
+        const float Y = SpawnCenter.Y + Entry.Offset.Y;
+        const float Z = Manager->GetTerrainHeightAt(X, Y) + 125.0f;
+
+        FActorSpawnParameters Params;
+        Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
+        ANWEnemy* Enemy = GetWorld()->SpawnActor<ANWEnemy>(
+            ANWEnemy::StaticClass(),
+            FVector(X, Y, Z),
+            (SpawnCenter - FVector(X, Y, 0.0f)).Rotation(),
+            Params);
+
+        if (Enemy)
+        {
+            Enemy->ConfigureEnemy(Entry.Archetype, false, 1);
+            ++Spawned;
+        }
+    }
+
+    UE_LOG(LogTemp, Warning, TEXT("[PLAYTEST] READY | encontro inicial=%d | inimigos proximos existentes=%d | WASD/Mouse LMB/RMB Q/E/R G I T/Y"),
+        Spawned, NearbyRegularEnemies);
 }
 
 ANWProceduralWorldManager* ANWGameMode::EnsureWorldManager()

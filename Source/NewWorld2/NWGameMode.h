@@ -19,6 +19,7 @@ public:
 
 private:
     ANWProceduralWorldManager* EnsureWorldManager();
+    void SpawnPlaytestEncounter();
 
     UPROPERTY(Transient)
     TObjectPtr<ANWProceduralWorldManager> WorldManager;
