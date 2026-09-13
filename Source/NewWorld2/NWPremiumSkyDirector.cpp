@@ -2,6 +2,7 @@
 
 #include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
+#include "Components/PostProcessComponent.h"
 #include "Components/SceneComponent.h"
 #include "Components/SkyLightComponent.h"
 #include "Components/VolumetricCloudComponent.h"
@@ -13,7 +14,7 @@
 ANWPremiumSkyDirector::ANWPremiumSkyDirector()
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.TickInterval = 0.35f;
+    PrimaryActorTick.TickInterval = 0.50f;
     PrimaryActorTick.TickGroup = TG_PostUpdateWork;
     bReplicates = false;
 
@@ -26,6 +27,11 @@ ANWPremiumSkyDirector::ANWPremiumSkyDirector()
     VolumetricCloud->SetLayerHeight(8.5f);
     VolumetricCloud->SetGroundAlbedo(FColor(104, 110, 91));
     VolumetricCloud->SetbUsePerSampleAtmosphericLightTransmittance(true);
+
+    PostProcess = CreateDefaultSubobject<UPostProcessComponent>(TEXT("PremiumWorldGradeV9"));
+    PostProcess->SetupAttachment(SceneRoot);
+    PostProcess->bUnbound = true;
+    PostProcess->BlendWeight = 1.0f;
 }
 
 void ANWPremiumSkyDirector::BeginPlay()
@@ -38,6 +44,7 @@ void ANWPremiumSkyDirector::BeginPlay()
     }
     RefreshReferences();
     ConfigureClouds();
+    ConfigureColorGrade();
     ApplyPremiumLighting();
 }
 
@@ -46,6 +53,7 @@ void ANWPremiumSkyDirector::Tick(float DeltaSeconds)
     Super::Tick(DeltaSeconds);
     if (!WorldManager.IsValid() || !WorldDirector.IsValid()) RefreshReferences();
     if (!bCloudConfigured) ConfigureClouds();
+    if (!bColorGradeConfigured) ConfigureColorGrade();
     ApplyPremiumLighting();
 }
 
@@ -77,9 +85,32 @@ void ANWPremiumSkyDirector::ConfigureClouds()
         VolumetricCloud->SetMaterial(CloudMaterial);
         VolumetricCloud->SetVisibility(true, true);
         bCloudConfigured = true;
-        UE_LOG(LogTemp, Warning, TEXT("[SKY-V6] nuvens volumetricas ativas: %s"), *CloudMaterial->GetPathName());
+        UE_LOG(LogTemp, Warning, TEXT("[SKY-V9] nuvens volumetricas ativas: %s"), *CloudMaterial->GetPathName());
     }
-    else UE_LOG(LogTemp, Warning, TEXT("[SKY-V6] cloud material padrao indisponivel; SkyAtmosphere permanece ativo."));
+    else
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[SKY-V9] cloud material padrao indisponivel; SkyAtmosphere permanece ativo."));
+    }
+}
+
+void ANWPremiumSkyDirector::ConfigureColorGrade()
+{
+    if (!PostProcess || bColorGradeConfigured) { return; }
+
+    FPostProcessSettings& Settings = PostProcess->Settings;
+    Settings.bOverride_ColorSaturation = true;
+    Settings.ColorSaturation = FVector4(1.07f, 1.07f, 1.06f, 1.0f);
+    Settings.bOverride_ColorContrast = true;
+    Settings.ColorContrast = FVector4(1.035f, 1.035f, 1.035f, 1.0f);
+    Settings.bOverride_ColorGamma = true;
+    Settings.ColorGamma = FVector4(0.99f, 0.99f, 0.985f, 1.0f);
+    Settings.bOverride_VignetteIntensity = true;
+    Settings.VignetteIntensity = 0.18f;
+    Settings.bOverride_BloomIntensity = true;
+    Settings.BloomIntensity = 0.38f;
+
+    bColorGradeConfigured = true;
+    UE_LOG(LogTemp, Warning, TEXT("[SKY-V9] color grade moderado ativo | saturation=1.07 contrast=1.035 bloom=0.38."));
 }
 
 void ANWPremiumSkyDirector::ApplyPremiumLighting()
@@ -88,7 +119,7 @@ void ANWPremiumSkyDirector::ApplyPremiumLighting()
 
     const float WorldTimeHours = WorldDirector.IsValid() ? WorldDirector->GetWorldTimeHours() : 10.0f;
     const float SolarAngle = (WorldTimeHours - 12.0f) / 12.0f * PI;
-    const float DayFactor = FMath::Clamp(FMath::Cos(SolarAngle) * 1.10f + 0.18f, 0.18f, 1.0f);
+    const float DayFactor = FMath::Clamp(FMath::Cos(SolarAngle) * 1.06f + 0.17f, 0.18f, 1.0f);
     const float SunPitch = 90.0f - (WorldTimeHours / 24.0f) * 360.0f;
 
     TArray<UDirectionalLightComponent*> Suns;
@@ -97,22 +128,22 @@ void ANWPremiumSkyDirector::ApplyPremiumLighting()
     {
         if (!Sun) continue;
         Sun->SetWorldRotation(FRotator(SunPitch, -32.0f, 0.0f));
-        Sun->SetIntensity(FMath::Max(2.0f, 12.8f * DayFactor));
-        Sun->SetLightColor(DayFactor < 0.32f ? FLinearColor(1.0f, 0.60f, 0.34f) : FLinearColor(1.0f, 0.975f, 0.90f));
-        Sun->SetVolumetricScatteringIntensity(FMath::Lerp(1.0f, 2.05f, DayFactor));
+        Sun->SetIntensity(FMath::Max(2.0f, 11.6f * DayFactor));
+        Sun->SetLightColor(DayFactor < 0.32f ? FLinearColor(1.0f, 0.60f, 0.34f) : FLinearColor(1.0f, 0.965f, 0.885f));
+        Sun->SetVolumetricScatteringIntensity(FMath::Lerp(0.90f, 1.65f, DayFactor));
         Sun->SetAtmosphereSunLight(true);
         Sun->SetAtmosphereSunLightIndex(0);
-        Sun->SetAtmosphereSunDiskColorScale(FLinearColor(1.18f, 1.04f, 0.86f, 1.0f));
+        Sun->SetAtmosphereSunDiskColorScale(FLinearColor(1.14f, 1.02f, 0.86f, 1.0f));
         Sun->bCastShadowsOnAtmosphere = true;
         Sun->bCastShadowsOnClouds = true;
         Sun->bCastCloudShadows = true;
         Sun->bEnableLightShaftOcclusion = true;
-        Sun->OcclusionMaskDarkness = 0.48f;
+        Sun->OcclusionMaskDarkness = 0.52f;
         Sun->OcclusionDepthRange = 22000.0f;
         Sun->SetEnableLightShaftBloom(true);
-        Sun->SetBloomScale(0.78f);
-        Sun->SetBloomThreshold(0.10f);
-        Sun->SetBloomMaxBrightness(55.0f);
+        Sun->SetBloomScale(0.52f);
+        Sun->SetBloomThreshold(0.16f);
+        Sun->SetBloomMaxBrightness(42.0f);
         Sun->SetBloomTint(FColor(255, 229, 178));
     }
 
@@ -121,7 +152,7 @@ void ANWPremiumSkyDirector::ApplyPremiumLighting()
     for (USkyLightComponent* Sky : Skies)
     {
         if (!Sky) continue;
-        Sky->SetIntensity(FMath::Lerp(0.82f, 1.82f, DayFactor));
+        Sky->SetIntensity(FMath::Lerp(0.72f, 1.46f, DayFactor));
     }
 
     TArray<UExponentialHeightFogComponent*> Fogs;
@@ -129,23 +160,23 @@ void ANWPremiumSkyDirector::ApplyPremiumLighting()
     for (UExponentialHeightFogComponent* Fog : Fogs)
     {
         if (!Fog) continue;
-        Fog->SetFogDensity(0.0030f);
-        Fog->SetStartDistance(55.0f);
+        Fog->SetFogDensity(0.0024f);
+        Fog->SetStartDistance(140.0f);
         Fog->SetVolumetricFog(true);
         Fog->SetVolumetricFogStartDistance(0.0f);
-        Fog->SetVolumetricFogNearFadeInDistance(100.0f);
-        Fog->SetVolumetricFogDistance(15500.0f);
-        Fog->SetVolumetricFogScatteringDistribution(0.78f);
-        Fog->SetVolumetricFogAlbedo(FColor(250, 249, 242));
-        Fog->SetVolumetricFogExtinctionScale(0.55f);
-        Fog->SetVolumetricFogEmissive(FLinearColor(0.008f, 0.009f, 0.010f));
+        Fog->SetVolumetricFogNearFadeInDistance(160.0f);
+        Fog->SetVolumetricFogDistance(14500.0f);
+        Fog->SetVolumetricFogScatteringDistribution(0.74f);
+        Fog->SetVolumetricFogAlbedo(FColor(242, 244, 236));
+        Fog->SetVolumetricFogExtinctionScale(0.46f);
+        Fog->SetVolumetricFogEmissive(FLinearColor(0.006f, 0.007f, 0.008f));
     }
 
     static bool bLogged = false;
     if (!bLogged)
     {
         bLogged = true;
-        UE_LOG(LogTemp, Warning, TEXT("[SKY-V6] sol/shafts/clouds premium | sun=%.2f skylight=%.2f bloom=0.78 SSR configurado"),
-            FMath::Max(2.0f, 12.8f * DayFactor), FMath::Lerp(0.82f, 1.82f, DayFactor));
+        UE_LOG(LogTemp, Warning, TEXT("[SKY-V9] luz balanceada | sun=%.2f skylight=%.2f | fog menos lavado | grade ativo"),
+            FMath::Max(2.0f, 11.6f * DayFactor), FMath::Lerp(0.72f, 1.46f, DayFactor));
     }
 }
