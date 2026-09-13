@@ -103,8 +103,14 @@ namespace
         FActorSpawnParameters Params;
         Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
         TActorClass* Spawned = World->SpawnActor<TActorClass>(TActorClass::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-        if (Spawned) UE_LOG(LogTemp, Display, TEXT("[BOOT] %s ativo: %s"), LogTag, *Spawned->GetName());
-        else UE_LOG(LogTemp, Error, TEXT("[BOOT] falha ao criar %s."), LogTag);
+        if (Spawned)
+        {
+            UE_LOG(LogTemp, Display, TEXT("[BOOT] %s ativo: %s"), LogTag, *Spawned->GetName());
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("[BOOT] falha ao criar %s."), LogTag);
+        }
         return Spawned;
     }
 }
