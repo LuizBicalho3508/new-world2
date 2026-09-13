@@ -3,7 +3,10 @@
 #include "Components/CapsuleComponent.h"
 #include "Components/HierarchicalInstancedStaticMeshComponent.h"
 #include "Components/SceneComponent.h"
+#include "Components/SkeletalMeshComponent.h"
+#include "Components/StaticMeshComponent.h"
 #include "Engine/CollisionProfile.h"
+#include "Engine/SkeletalMesh.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
@@ -14,6 +17,24 @@
 #include "NWEnemy.h"
 #include "NWProceduralWorldManager.h"
 #include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+    float GetWeaponTargetDimension(const ENWWeaponType WeaponType, const bool bLeftHand)
+    {
+        switch (WeaponType)
+        {
+            case ENWWeaponType::Staff: return 185.0f;
+            case ENWWeaponType::Greatsword: return 170.0f;
+            case ENWWeaponType::DualSwords: return 112.0f;
+            case ENWWeaponType::SwordShield: return bLeftHand ? 78.0f : 112.0f;
+            case ENWWeaponType::Daggers: return 58.0f;
+            case ENWWeaponType::Bow: return 145.0f;
+            case ENWWeaponType::Firearm: return 128.0f;
+            default: return 120.0f;
+        }
+    }
+}
 
 ANWGameplaySafetyActor::ANWGameplaySafetyActor()
 {
@@ -65,6 +86,7 @@ void ANWGameplaySafetyActor::Tick(float DeltaSeconds)
     }
 
     StabilizePlayers();
+    StabilizeRuntimeVisuals(DeltaSeconds);
     EnforceEnemyPopulationBudget(DeltaSeconds);
 }
 
@@ -197,6 +219,136 @@ void ANWGameplaySafetyActor::StabilizePlayers()
             }
         }
     }
+}
+
+void ANWGameplaySafetyActor::StabilizeRuntimeVisuals(float DeltaSeconds)
+{
+    if (!GetWorld())
+    {
+        return;
+    }
+
+    VisualSafetyAccumulator += DeltaSeconds;
+    if (VisualSafetyAccumulator < VisualSafetyInterval)
+    {
+        return;
+    }
+    VisualSafetyAccumulator = 0.0f;
+
+    for (TActorIterator<ANWCharacter> It(GetWorld()); It; ++It)
+    {
+        if (IsValid(*It))
+        {
+            NormalizeWeaponVisuals(*It);
+        }
+    }
+
+    NormalizeEnemyVisuals();
+}
+
+void ANWGameplaySafetyActor::NormalizeWeaponVisuals(ANWCharacter* Character)
+{
+    if (!Character)
+    {
+        return;
+    }
+
+    TArray<UStaticMeshComponent*> Components;
+    Character->GetComponents<UStaticMeshComponent>(Components);
+
+    for (UStaticMeshComponent* Component : Components)
+    {
+        if (!Component || !Component->GetName().Contains(TEXT("NW_WeaponVisual"), ESearchCase::IgnoreCase))
+        {
+            continue;
+        }
+
+        const bool bLeftHand = Component->GetName().Contains(TEXT("_L"), ESearchCase::IgnoreCase);
+        const float TargetDimension = GetWeaponTargetDimension(Character->GetActiveWeapon(), bLeftHand);
+        NormalizeStaticMeshComponent(Component, TargetDimension, TEXT("arma"));
+    }
+}
+
+void ANWGameplaySafetyActor::NormalizeEnemyVisuals()
+{
+    if (!GetWorld())
+    {
+        return;
+    }
+
+    for (TActorIterator<ANWEnemy> It(GetWorld()); It; ++It)
+    {
+        ANWEnemy* Enemy = *It;
+        if (!IsValid(Enemy) || !Enemy->GetMesh())
+        {
+            continue;
+        }
+
+        USkeletalMesh* Mesh = Enemy->GetMesh()->GetSkeletalMeshAsset();
+        if (!Mesh)
+        {
+            continue;
+        }
+
+        const FBoxSphereBounds Bounds = Mesh->GetImportedBounds();
+        const float Height = static_cast<float>(Bounds.BoxExtent.Z * 2.0);
+        if (!FMath::IsFinite(Height) || Height <= 1.0f)
+        {
+            continue;
+        }
+
+        const bool bBoss = Enemy->IsWorldBoss() || Cast<ANWDungeonGuardian>(Enemy) != nullptr;
+        const float MinReasonableHeight = bBoss ? 210.0f : 135.0f;
+        const float MaxReasonableHeight = bBoss ? 430.0f : 280.0f;
+        if (Height >= MinReasonableHeight && Height <= MaxReasonableHeight)
+        {
+            continue;
+        }
+
+        const float TargetHeight = bBoss ? 320.0f : 190.0f;
+        const float DesiredScale = FMath::Clamp(TargetHeight / Height, 0.08f, 3.0f);
+        const FVector Desired(DesiredScale);
+        if (!Enemy->GetMesh()->GetRelativeScale3D().Equals(Desired, 0.025f))
+        {
+            Enemy->GetMesh()->SetRelativeScale3D(Desired);
+            UE_LOG(LogTemp, Warning, TEXT("[VISUAL-SAFETY] criatura %s normalizada: altura mesh %.1f -> alvo %.1f | escala %.3f"),
+                *Enemy->GetName(), Height, TargetHeight, DesiredScale);
+        }
+    }
+}
+
+void ANWGameplaySafetyActor::NormalizeStaticMeshComponent(UStaticMeshComponent* Component, float TargetMaxDimension, const TCHAR* Context)
+{
+    if (!Component || !Component->GetStaticMesh())
+    {
+        return;
+    }
+
+    const FBoxSphereBounds Bounds = Component->GetStaticMesh()->GetBounds();
+    const float SizeX = static_cast<float>(Bounds.BoxExtent.X * 2.0);
+    const float SizeY = static_cast<float>(Bounds.BoxExtent.Y * 2.0);
+    const float SizeZ = static_cast<float>(Bounds.BoxExtent.Z * 2.0);
+    const float MaxDimension = FMath::Max(SizeX, FMath::Max(SizeY, SizeZ));
+    if (!FMath::IsFinite(MaxDimension) || MaxDimension <= 1.0f)
+    {
+        return;
+    }
+
+    const float DesiredScale = FMath::Clamp(TargetMaxDimension / MaxDimension, 0.015f, 5.0f);
+    const FVector Desired(DesiredScale);
+    if (Component->GetRelativeScale3D().Equals(Desired, 0.025f))
+    {
+        return;
+    }
+
+    Component->SetRelativeScale3D(Desired);
+    UE_LOG(LogTemp, Display, TEXT("[VISUAL-SAFETY] %s %s | mesh=%s | dimensao=%.1f | alvo=%.1f | escala=%.3f"),
+        Context,
+        *Component->GetName(),
+        *Component->GetStaticMesh()->GetName(),
+        MaxDimension,
+        TargetMaxDimension,
+        DesiredScale);
 }
 
 void ANWGameplaySafetyActor::EnforceEnemyPopulationBudget(float DeltaSeconds)
