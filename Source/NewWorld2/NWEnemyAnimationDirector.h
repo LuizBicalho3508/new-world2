@@ -10,10 +10,9 @@ class UAnimSequence;
 class USkeleton;
 
 /**
- * Premium V3 mob animation layer.
- * Evita executar AnimBlueprints de herois como AI (o Greystone AnimBP gerava
- * Divide_DoubleDouble no V2). Usa sequencias compatíveis com o skeleton e troca
- * Idle/Run/Attack somente quando o estado muda.
+ * Premium V4 mob animation layer.
+ * Usa AnimationSingleNode em vez de AnimBlueprint de heroi e cacheia o trio
+ * Idle/Run/Attack por Skeleton para nao repetir AssetRegistry/GetAsset a cada mob.
  */
 UCLASS()
 class NEWORLD2_API ANWEnemyAnimationDirector : public AActor
@@ -47,6 +46,13 @@ private:
         float AttackPresentationEndsAt = 0.0f;
     };
 
+    struct FSkeletonAnimSet
+    {
+        TWeakObjectPtr<UAnimSequence> Idle;
+        TWeakObjectPtr<UAnimSequence> Run;
+        TWeakObjectPtr<UAnimSequence> Attack;
+    };
+
     void ScanAnimations();
     void UpdateEnemy(ANWEnemy* Enemy, float Now);
     void EnsureSequences(ANWEnemy* Enemy, FEnemyAnimState& State);
@@ -57,4 +63,5 @@ private:
 
     TArray<FAssetData> AnimSequenceAssets;
     TMap<TWeakObjectPtr<ANWEnemy>, FEnemyAnimState> EnemyStates;
+    TMap<TWeakObjectPtr<USkeleton>, FSkeletonAnimSet> SkeletonCache;
 };
