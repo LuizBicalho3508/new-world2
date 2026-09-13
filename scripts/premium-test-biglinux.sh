@@ -111,16 +111,22 @@ for file in "${required_files[@]}"; do
     [[ -f "$PROJECT_DIR/$file" ]] || fail "arquivo Premium V2 ausente: $file"
 done
 
+# GameMode e o bootstrap primario. PremiumGameplayDirector repete a verificacao
+# em runtime para auto-recuperacao caso um ator seja removido/recriado.
 grep -q 'ANWPremiumGameplayDirector' Source/NewWorld2/NWGameMode.cpp || fail "PremiumGameplayDirector nao esta ligado ao GameMode"
+grep -q 'ANWPremiumEnvironmentDirector' Source/NewWorld2/NWGameMode.cpp || fail "PremiumEnvironmentDirector nao esta ligado diretamente ao GameMode"
+grep -q 'ANWEnemyVisualDirector' Source/NewWorld2/NWGameMode.cpp || fail "EnemyVisualDirector nao esta ligado diretamente ao GameMode"
+
 grep -q 'FREE AIM' Source/NewWorld2/NWPremiumGameplayDirector.cpp || fail "free aim nao esta habilitado no gameplay director"
 grep -q 'ResolveFreeAimPoint' Source/NewWorld2/NWPremiumGameplayDirector.cpp || fail "camera free-aim resolver ausente"
 grep -q 'UNWActionReticleWidget' Source/NewWorld2/NWPremiumGameplayDirector.cpp || fail "reticulo action-RPG nao esta ligado ao gameplay"
-grep -q 'ANWPremiumEnvironmentDirector' Source/NewWorld2/NWPremiumGameplayDirector.cpp || fail "diretor de ambiente realista nao esta ligado ao gameplay"
-grep -q 'ANWEnemyVisualDirector' Source/NewWorld2/NWPremiumGameplayDirector.cpp || fail "diretor visual de mobs nao esta ligado ao gameplay"
+grep -q 'EnsurePremiumWorldSystems' Source/NewWorld2/NWPremiumGameplayDirector.cpp || fail "watchdog dos diretores premium ausente"
 grep -q 'DesiredNearbyTrainingEnemies' Source/NewWorld2/NWPremiumGameplayDirector.h || fail "encontro de teste garantido ausente"
+
 grep -q 'Megascans' Source/NewWorld2/NWPremiumEnvironmentDirector.cpp || fail "curadoria de natureza realista ausente"
 grep -q 'lowpoly' Source/NewWorld2/NWPremiumEnvironmentDirector.cpp || fail "filtro anti-lowpoly ausente"
-grep -q 'ParagonGreystone' Source/NewWorld2/NWEnemyVisualDirector.cpp || fail "safety de arma duplicada do Greystone ausente"
+grep -q 'FindBestParagonFallback' Source/NewWorld2/NWEnemyVisualDirector.cpp || fail "fallback skeletal real dos mobs ausente"
+
 grep -q 'bEnableDynamicPresentationAssets = false' Source/NewWorld2/NWWorldEventDirector.h || fail "apresentacao Niagara/audio insegura voltou a ser default"
 grep -q 'bEnableNiagaraPresentation = false' Source/NewWorld2/NWContentPresentationManager.h || fail "Niagara automatico voltou a ser default"
 grep -q 'presentation manager unico ativo' Source/NewWorld2/NWGameMode.cpp || fail "dono visual principal nao confirmado"
