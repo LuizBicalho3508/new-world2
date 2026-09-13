@@ -7,6 +7,7 @@
 #include "NWCharacter.h"
 #include "NWContentPresentationManager.h"
 #include "NWFabExpansionPresentationManager.h"
+#include "NWGameplaySafetyActor.h"
 #include "NWLightingSafetyActor.h"
 #include "NWProceduralWorldManager.h"
 #include "NWWorldEventDirector.h"
@@ -51,6 +52,20 @@ void ANWGameMode::StartPlay()
             GetWorld()->SpawnActor<ANWLightingSafetyActor>(ANWLightingSafetyActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
         }
 
+        bool bHasGameplaySafety = false;
+        for (TActorIterator<ANWGameplaySafetyActor> It(GetWorld()); It; ++It)
+        {
+            bHasGameplaySafety = true;
+            break;
+        }
+
+        if (!bHasGameplaySafety)
+        {
+            FActorSpawnParameters Params;
+            Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+            GetWorld()->SpawnActor<ANWGameplaySafetyActor>(ANWGameplaySafetyActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+        }
+
         bool bHasPresentationManager = false;
         for (TActorIterator<ANWContentPresentationManager> It(GetWorld()); It; ++It)
         {
@@ -77,7 +92,7 @@ void ANWGameMode::RestartPlayer(AController* NewPlayer)
     }
 
     ANWProceduralWorldManager* Manager = EnsureWorldManager();
-    const float SpawnZ = Manager ? Manager->GetTerrainHeightAt(0.0f, 0.0f) + 260.0f : 1200.0f;
+    const float SpawnZ = Manager ? Manager->GetTerrainHeightAt(0.0f, 0.0f) + 110.0f : 1200.0f;
     const FTransform SpawnTransform(FRotator(0.0f, 0.0f, 0.0f), FVector(0.0f, 0.0f, SpawnZ));
 
     RestartPlayerAtTransform(NewPlayer, SpawnTransform);
