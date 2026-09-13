@@ -7,6 +7,7 @@
 #include "NWCharacter.h"
 #include "NWContentPresentationManager.h"
 #include "NWFabExpansionPresentationManager.h"
+#include "NWLightingSafetyActor.h"
 #include "NWProceduralWorldManager.h"
 #include "NWWorldEventDirector.h"
 #include "ProceduralMeshComponent.h"
@@ -34,6 +35,20 @@ void ANWGameMode::StartPlay()
             FActorSpawnParameters Params;
             Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
             GetWorld()->SpawnActor<ANWWorldEventDirector>(ANWWorldEventDirector::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+        }
+
+        bool bHasLightingSafety = false;
+        for (TActorIterator<ANWLightingSafetyActor> It(GetWorld()); It; ++It)
+        {
+            bHasLightingSafety = true;
+            break;
+        }
+
+        if (!bHasLightingSafety)
+        {
+            FActorSpawnParameters Params;
+            Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+            GetWorld()->SpawnActor<ANWLightingSafetyActor>(ANWLightingSafetyActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
         }
 
         bool bHasPresentationManager = false;
