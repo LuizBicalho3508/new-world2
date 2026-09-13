@@ -71,9 +71,9 @@ void ANWCharacter::ConfigurePremiumV6StarterLoadout()
         || EquippedWeaponItems.ContainsByPredicate(IsV6Starter);
     if (bAlreadyConfigured) { return; }
 
-    // O fluxo legado equipa prototipos no BeginPlay. Na V6 eles viram itens de
-    // demonstracao dentro da bag: o corpo base nasce sem overlays e o jogador
-    // percebe imediatamente a mudanca visual ao equipar uma peca.
+    // Stability V10: the old flow removed the legacy equipped weapons but kept
+    // Primary/Secondary/Active enums unchanged. HUD then said Greatsword/Staff
+    // while the visual director correctly saw no equipped item and showed empty hands.
     EquippedItems.RemoveAll([](const FNWGeneratedItem& Item)
     {
         return Item.ItemSeed >= 1001 && Item.ItemSeed <= 1003;
@@ -88,6 +88,7 @@ void ANWCharacter::ConfigurePremiumV6StarterLoadout()
         return Item.ItemSeed >= 6100 && Item.ItemSeed <= 6199;
     });
 
+    // Armor remains in the bag so the user can deliberately test each slot.
     InventoryItems.Add(MakeStarterArmor(6101, ENWEquipmentSlot::Head, ENWArmorWeight::Light,
         TEXT("Capuz do Explorador"), TEXT("Ranger"),
         { { ENWAffixType::Haste, 1.5f }, { ENWAffixType::Precision, 1.0f } }));
@@ -104,15 +105,26 @@ void ANWCharacter::ConfigurePremiumV6StarterLoadout()
         TEXT("Botas do Caminhante"), TEXT("Wanderer"),
         { { ENWAffixType::Haste, 1.4f }, { ENWAffixType::DodgeEmpower, 1.0f } }));
 
-    InventoryItems.Add(MakeStarterWeapon(6111, ENWWeaponType::Greatsword,
+    const FNWGeneratedItem StarterGreatsword = MakeStarterWeapon(6111, ENWWeaponType::Greatsword,
         TEXT("Espada Grande de Ferro"), TEXT("BlackIron"),
-        { { ENWAffixType::Power, 2.0f }, { ENWAffixType::Executioner, 1.2f } }));
-    InventoryItems.Add(MakeStarterWeapon(6112, ENWWeaponType::Staff,
+        { { ENWAffixType::Power, 2.0f }, { ENWAffixType::Executioner, 1.2f } });
+    const FNWGeneratedItem StarterStaff = MakeStarterWeapon(6112, ENWWeaponType::Staff,
         TEXT("Cajado Elemental de Aprendiz"), TEXT("Stormcaller"),
-        { { ENWAffixType::Haste, 1.7f }, { ENWAffixType::AbilityEcho, 1.2f } }));
-    InventoryItems.Add(MakeStarterWeapon(6113, ENWWeaponType::Daggers,
+        { { ENWAffixType::Haste, 1.7f }, { ENWAffixType::AbilityEcho, 1.2f } });
+    const FNWGeneratedItem StarterDaggers = MakeStarterWeapon(6113, ENWWeaponType::Daggers,
         TEXT("Adagas Presa Noturna"), TEXT("Nightfang"),
-        { { ENWAffixType::Precision, 1.8f }, { ENWAffixType::PoisonCoating, 1.4f } }));
+        { { ENWAffixType::Precision, 1.8f }, { ENWAffixType::PoisonCoating, 1.4f } });
+
+    // Start with two weapons that already have proven installed visual meshes.
+    // Staff stays one Enter away in the inventory and V10 provides a safe visual
+    // fallback when no real staff mesh exists locally.
+    EquippedWeaponItems.Reset();
+    EquippedWeaponItems.Add(StarterGreatsword);
+    EquippedWeaponItems.Add(StarterDaggers);
+    InventoryItems.Add(StarterStaff);
+    PrimaryWeapon = ENWWeaponType::Greatsword;
+    SecondaryWeapon = ENWWeaponType::Daggers;
+    ActiveWeapon = PrimaryWeapon;
 
     SortInventory();
     RecalculateEquipmentStats();
@@ -121,7 +133,8 @@ void ANWCharacter::ConfigurePremiumV6StarterLoadout()
     SelectedInventoryIndex = 0;
     ForceNetUpdate();
 
-    UE_LOG(LogTemp, Warning, TEXT("[STARTER-V6] personagem base sem overlays | 5 armaduras + 3 armas iniciais na bag para equipar."));
+    UE_LOG(LogTemp, Warning,
+        TEXT("[STARTER-V10] loadout consistente | slot1=Espada Grande | slot2=Adagas | Cajado na bag | 5 armaduras para teste."));
 }
 
 bool ANWCharacter::HasEquippedWeaponItem(ENWWeaponType WeaponType) const

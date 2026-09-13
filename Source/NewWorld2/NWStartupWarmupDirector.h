@@ -9,10 +9,13 @@ class UNiagaraSystem;
 class UNWStartupLoadingWidget;
 
 /**
- * Premium V7 startup gate.
- * Waits for both PSO precache and the small set of Niagara systems most likely
- * to be used by combat before returning input to the player. Heavy compilation
- * therefore happens behind the loading layer instead of on the first Q/E/R cast.
+ * Stability V10 startup gate.
+ *
+ * The V9 playtest proved that scanning/loading vendor Niagara graphs during
+ * map startup created minute-long shader/texture compilation while the gate
+ * itself reported no pending work. V10 only gives the PSO cache a short,
+ * bounded head start; combat VFX uses a tiny deterministic whitelist and is
+ * no longer force-spawned below the map.
  */
 UCLASS()
 class NEWORLD2_API ANWStartupWarmupDirector : public AActor
@@ -46,12 +49,12 @@ private:
     bool bFinished = false;
     bool bInputBlocked = false;
 
-    UPROPERTY(EditDefaultsOnly, Category="Startup", meta=(ClampMin="2.0", ClampMax="30.0"))
-    float MinimumLoadingSeconds = 6.0f;
+    UPROPERTY(EditDefaultsOnly, Category="Startup", meta=(ClampMin="1.0", ClampMax="15.0"))
+    float MinimumLoadingSeconds = 2.5f;
 
-    UPROPERTY(EditDefaultsOnly, Category="Startup", meta=(ClampMin="0.25", ClampMax="5.0"))
-    float QuietWindowSeconds = 0.85f;
+    UPROPERTY(EditDefaultsOnly, Category="Startup", meta=(ClampMin="0.20", ClampMax="3.0"))
+    float QuietWindowSeconds = 0.55f;
 
-    UPROPERTY(EditDefaultsOnly, Category="Startup", meta=(ClampMin="8.0", ClampMax="60.0"))
-    float MaximumLoadingSeconds = 45.0f;
+    UPROPERTY(EditDefaultsOnly, Category="Startup", meta=(ClampMin="4.0", ClampMax="30.0"))
+    float MaximumLoadingSeconds = 12.0f;
 };

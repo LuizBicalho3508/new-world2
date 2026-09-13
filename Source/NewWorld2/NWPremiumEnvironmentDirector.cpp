@@ -53,18 +53,16 @@ ANWPremiumEnvironmentDirector::ANWPremiumEnvironmentDirector()
     RocksPrimary->SetCastShadow(true);
     RocksSecondary->SetCastShadow(true);
 
-    // V8 had two foliage layers both casting/duplicating thousands of instances.
-    // V9 keeps the expensive shadow casters on macro objects only.
     GroundCover->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     Bushes->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     GroundCover->SetCanEverAffectNavigation(false);
     Bushes->SetCanEverAffectNavigation(false);
     GroundCover->SetCastShadow(false);
     Bushes->SetCastShadow(false);
-    GroundCover->SetCullDistances(350, 5200);
-    Bushes->SetCullDistances(550, 7600);
-    RocksPrimary->SetCullDistances(800, 13000);
-    RocksSecondary->SetCullDistances(800, 13000);
+    GroundCover->SetCullDistances(350, 4800);
+    Bushes->SetCullDistances(550, 6800);
+    RocksPrimary->SetCullDistances(800, 12000);
+    RocksSecondary->SetCullDistances(800, 12000);
 }
 
 void ANWPremiumEnvironmentDirector::BeginPlay()
@@ -83,7 +81,7 @@ void ANWPremiumEnvironmentDirector::BeginPlay()
 
     if (!WorldManager)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ENV-V9] WorldManager nao encontrado; ambiente premium nao foi montado."));
+        UE_LOG(LogTemp, Warning, TEXT("[ENV-V10] WorldManager nao encontrado; ambiente estavel nao foi montado."));
         return;
     }
 
@@ -109,7 +107,7 @@ void ANWPremiumEnvironmentDirector::ScanInstalledAssets()
     MaterialFilter.bRecursiveClasses = true;
     Registry.GetAssets(MaterialFilter, MaterialAssets);
 
-    UE_LOG(LogTemp, Display, TEXT("[ENV-V9] catalogo local: StaticMesh=%d | Material=%d"), StaticMeshAssets.Num(), MaterialAssets.Num());
+    UE_LOG(LogTemp, Display, TEXT("[ENV-V10] catalogo local: StaticMesh=%d | Material=%d"), StaticMeshAssets.Num(), MaterialAssets.Num());
 }
 
 void ANWPremiumEnvironmentDirector::HideLegacyPrototypeDecor(ANWProceduralWorldManager* WorldManager) const
@@ -133,7 +131,7 @@ void ANWPremiumEnvironmentDirector::HideLegacyPrototypeDecor(ANWProceduralWorldM
         ++Hidden;
     }
 
-    UE_LOG(LogTemp, Display, TEXT("[ENV-V9] camada prototipo removida: %d HISMs antigos desligados."), Hidden);
+    UE_LOG(LogTemp, Display, TEXT("[ENV-V10] camada prototipo removida: %d HISMs antigos desligados."), Hidden);
 }
 
 void ANWPremiumEnvironmentDirector::ApplyGroundMaterial(ANWProceduralWorldManager* WorldManager)
@@ -142,14 +140,14 @@ void ANWPremiumEnvironmentDirector::ApplyGroundMaterial(ANWProceduralWorldManage
     UMaterialInterface* Ground = FindBestGroundMaterial();
     if (!Ground)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[ENV-V9] material PBR de solo nao encontrado; vertex-color base permanece ativo."));
+        UE_LOG(LogTemp, Warning, TEXT("[ENV-V10] material PBR de solo nao encontrado; vertex-color base permanece ativo."));
         return;
     }
 
     if (UProceduralMeshComponent* Terrain = WorldManager->FindComponentByClass<UProceduralMeshComponent>())
     {
         Terrain->SetMaterial(0, Ground);
-        UE_LOG(LogTemp, Warning, TEXT("[ENV-V9] solo PBR aplicado com UV world-tiling V9: %s"), *Ground->GetPathName());
+        UE_LOG(LogTemp, Warning, TEXT("[ENV-V10] solo PBR aplicado com UV world-tiling: %s"), *Ground->GetPathName());
     }
 }
 
@@ -160,9 +158,9 @@ void ANWPremiumEnvironmentDirector::PrepareMeshForInstancing(UStaticMesh* Mesh) 
     {
         if (UMaterialInterface* Material = Slot.MaterialInterface)
         {
-            // Important: call this BEFORE SetStaticMesh/AddInstance. In V8 the
-            // permutation was requested only later by another actor, after the
-            // renderer had already selected DefaultMaterial for old KiteDemo assets.
+            // Only ask for the HISM permutation for the few meshes that actually
+            // survived V10 selection. The old scanner touched unrelated editor/FX
+            // assets and created large shader/texture work during startup.
             Material->CheckMaterialUsage_Concurrent(MATUSAGE_InstancedStaticMeshes);
         }
     }
@@ -173,51 +171,51 @@ void ANWPremiumEnvironmentDirector::BuildPremiumEnvironment(ANWProceduralWorldMa
     if (!WorldManager) { return; }
 
     UStaticMesh* TreeA = FindBestNatureMesh(
-        { TEXT("Tree"), TEXT("Oak"), TEXT("Pine"), TEXT("Beech"), TEXT("Hornbeam"), TEXT("Birch"), TEXT("Fir"), TEXT("Spruce"), TEXT("Maple") },
-        { TEXT("EuropeanBeech"), TEXT("EuropeanHornbeam"), TEXT("Megascans"), TEXT("Quixel"), TEXT("Fab"), TEXT("Forest"), TEXT("Nature"), TEXT("Realistic"), TEXT("PBR"), TEXT("Nanite") },
-        150.0f, 9000.0f);
+        { TEXT("Tree"), TEXT("Oak"), TEXT("Pine"), TEXT("Beech"), TEXT("Hornbeam"), TEXT("Birch"), TEXT("Fir"), TEXT("Spruce"), TEXT("Maple"), TEXT("Sapling"), TEXT("Seedling") },
+        { TEXT("EuropeanBeech"), TEXT("EuropeanHornbeam"), TEXT("SimpleWind"), TEXT("Sapling"), TEXT("Seedling"), TEXT("Nature"), TEXT("Realistic") },
+        100.0f, 5000.0f);
 
     const FString TreeAPath = TreeA ? TreeA->GetPathName() : FString();
     UStaticMesh* TreeB = FindBestNatureMesh(
-        { TEXT("Tree"), TEXT("Oak"), TEXT("Pine"), TEXT("Beech"), TEXT("Hornbeam"), TEXT("Birch"), TEXT("Fir"), TEXT("Spruce"), TEXT("Maple") },
-        { TEXT("EuropeanBeech"), TEXT("EuropeanHornbeam"), TEXT("Megascans"), TEXT("Quixel"), TEXT("Fab"), TEXT("Forest"), TEXT("Nature"), TEXT("Realistic"), TEXT("PBR"), TEXT("Nanite") },
-        150.0f, 9000.0f, TreeAPath);
+        { TEXT("Tree"), TEXT("Oak"), TEXT("Pine"), TEXT("Beech"), TEXT("Hornbeam"), TEXT("Birch"), TEXT("Fir"), TEXT("Spruce"), TEXT("Maple"), TEXT("Sapling"), TEXT("Seedling") },
+        { TEXT("EuropeanBeech"), TEXT("EuropeanHornbeam"), TEXT("SimpleWind"), TEXT("Sapling"), TEXT("Seedling"), TEXT("Nature"), TEXT("Realistic") },
+        100.0f, 5000.0f, TreeAPath);
 
     UStaticMesh* Grass = FindBestNatureMesh(
-        { TEXT("Grass"), TEXT("GroundCover"), TEXT("Meadow"), TEXT("Fern"), TEXT("Foliage"), TEXT("Plant") },
-        { TEXT("Megascans"), TEXT("Quixel"), TEXT("Fab"), TEXT("Forest"), TEXT("Nature"), TEXT("Realistic"), TEXT("PBR") },
-        3.0f, 900.0f);
+        { TEXT("Grass"), TEXT("GroundCover"), TEXT("Meadow"), TEXT("Fern"), TEXT("Plant") },
+        { TEXT("Megascans"), TEXT("Quixel"), TEXT("KiteDemo"), TEXT("Forest"), TEXT("Nature"), TEXT("Realistic") },
+        3.0f, 700.0f);
 
     UStaticMesh* Bush = FindBestNatureMesh(
-        { TEXT("Bush"), TEXT("Shrub"), TEXT("Fern"), TEXT("Plant"), TEXT("Foliage") },
-        { TEXT("Megascans"), TEXT("Quixel"), TEXT("Fab"), TEXT("Forest"), TEXT("Nature"), TEXT("Realistic"), TEXT("PBR") },
-        10.0f, 1800.0f);
+        { TEXT("Bush"), TEXT("Shrub"), TEXT("Fern"), TEXT("Plant") },
+        { TEXT("Megascans"), TEXT("Quixel"), TEXT("KiteDemo"), TEXT("Forest"), TEXT("Nature"), TEXT("Realistic") },
+        10.0f, 1400.0f);
 
     UStaticMesh* RockA = FindBestNatureMesh(
         { TEXT("Rock"), TEXT("Boulder"), TEXT("Cliff"), TEXT("Stone") },
-        { TEXT("Megascans"), TEXT("Quixel"), TEXT("Fab"), TEXT("Nature"), TEXT("Realistic"), TEXT("PBR"), TEXT("Nanite") },
-        20.0f, 7000.0f);
+        { TEXT("Megascans"), TEXT("Quixel"), TEXT("KiteDemo"), TEXT("Nature"), TEXT("Realistic"), TEXT("PBR") },
+        20.0f, 5000.0f);
 
     const FString RockAPath = RockA ? RockA->GetPathName() : FString();
     UStaticMesh* RockB = FindBestNatureMesh(
         { TEXT("Rock"), TEXT("Boulder"), TEXT("Cliff"), TEXT("Stone") },
-        { TEXT("Megascans"), TEXT("Quixel"), TEXT("Fab"), TEXT("Nature"), TEXT("Realistic"), TEXT("PBR"), TEXT("Nanite") },
-        20.0f, 7000.0f, RockAPath);
+        { TEXT("Megascans"), TEXT("Quixel"), TEXT("KiteDemo"), TEXT("Nature"), TEXT("Realistic"), TEXT("PBR") },
+        20.0f, 5000.0f, RockAPath);
 
     for (UStaticMesh* Mesh : { TreeA, TreeB, Grass, Bush, RockA, RockB }) { PrepareMeshForInstancing(Mesh); }
 
     TreesPrimary->SetStaticMesh(TreeA);
     TreesSecondary->SetStaticMesh(TreeB ? TreeB : TreeA);
-    GroundCover->SetStaticMesh(Grass ? Grass : Bush);
-    Bushes->SetStaticMesh(Bush ? Bush : Grass);
+    GroundCover->SetStaticMesh(Grass);
+    Bushes->SetStaticMesh(Bush);
     RocksPrimary->SetStaticMesh(RockA);
     RocksSecondary->SetStaticMesh(RockB ? RockB : RockA);
 
-    UE_LOG(LogTemp, Warning, TEXT("[ENV-V9] assets | treeA=%s | treeB=%s | grass=%s | bush=%s | rockA=%s | rockB=%s"),
+    UE_LOG(LogTemp, Warning, TEXT("[ENV-V10] assets | treeA=%s | treeB=%s | grass=%s | bush=%s | rockA=%s | rockB=%s"),
         TreeA ? *TreeA->GetPathName() : TEXT("NAO ENCONTRADO"),
         TreeB ? *TreeB->GetPathName() : TEXT("NAO ENCONTRADO"),
-        Grass ? *Grass->GetPathName() : TEXT("NAO ENCONTRADO"),
-        Bush ? *Bush->GetPathName() : TEXT("NAO ENCONTRADO"),
+        Grass ? *Grass->GetPathName() : TEXT("DESATIVADO - sem mesh natural segura"),
+        Bush ? *Bush->GetPathName() : TEXT("DESATIVADO - sem mesh natural segura"),
         RockA ? *RockA->GetPathName() : TEXT("NAO ENCONTRADO"),
         RockB ? *RockB->GetPathName() : TEXT("NAO ENCONTRADO"));
 
@@ -235,7 +233,7 @@ void ANWPremiumEnvironmentDirector::BuildPremiumEnvironment(ANWProceduralWorldMa
             if (!IsPlacementClear(WorldManager, P.X, P.Y, 0.10f, 230.0f)) { continue; }
             if (!IsTerrainUsable(WorldManager, P.X, P.Y, 0.78f)) { continue; }
 
-            const float HeightTarget = LocalRandom.FRandRange(720.0f, 1450.0f);
+            const float HeightTarget = LocalRandom.FRandRange(680.0f, 1220.0f);
             const float Scale = ComputeScaleForHeight(Mesh, HeightTarget) * LocalRandom.FRandRange(0.90f, 1.10f);
             const float GroundZ = WorldManager->GetTerrainHeightAt(P.X, P.Y);
             const float ZOffset = ComputeGroundOffset(Mesh, Scale);
@@ -244,14 +242,14 @@ void ANWPremiumEnvironmentDirector::BuildPremiumEnvironment(ANWProceduralWorldMa
         }
     };
 
-    AddTreeInstances(TreesPrimary, TreeA, TreeA ? 110 : 0, 11);
-    AddTreeInstances(TreesSecondary, TreeB ? TreeB : TreeA, (TreeB || TreeA) ? 70 : 0, 29);
+    AddTreeInstances(TreesPrimary, TreeA, TreeA ? 86 : 0, 11);
+    AddTreeInstances(TreesSecondary, TreeB ? TreeB : TreeA, (TreeB || TreeA) ? 48 : 0, 29);
 
     if (GroundCover->GetStaticMesh())
     {
         UStaticMesh* Mesh = GroundCover->GetStaticMesh();
         int32 Added = 0;
-        for (int32 Attempt = 0; Attempt < 3600 && Added < 650; ++Attempt)
+        for (int32 Attempt = 0; Attempt < 2200 && Added < 380; ++Attempt)
         {
             const FVector2D P = RandomPoint(Random, HalfExtent, 100.0f);
             if (!IsPlacementClear(WorldManager, P.X, P.Y, 0.54f, 50.0f)) { continue; }
@@ -267,7 +265,7 @@ void ANWPremiumEnvironmentDirector::BuildPremiumEnvironment(ANWProceduralWorldMa
     {
         UStaticMesh* Mesh = Bushes->GetStaticMesh();
         int32 Added = 0;
-        for (int32 Attempt = 0; Attempt < 1000 && Added < 140; ++Attempt)
+        for (int32 Attempt = 0; Attempt < 700 && Added < 85; ++Attempt)
         {
             const FVector2D P = RandomPoint(Random, HalfExtent, 420.0f);
             if (!IsPlacementClear(WorldManager, P.X, P.Y, 0.30f, 120.0f)) { continue; }
@@ -289,7 +287,7 @@ void ANWPremiumEnvironmentDirector::BuildPremiumEnvironment(ANWProceduralWorldMa
             const FVector2D P = RandomPoint(LocalRandom, HalfExtent, 580.0f);
             if (!IsPlacementClear(WorldManager, P.X, P.Y, 0.42f, 80.0f)) { continue; }
             if (!IsTerrainUsable(WorldManager, P.X, P.Y, 0.58f)) { continue; }
-            const float Scale = ComputeScaleForMaxDimension(Mesh, LocalRandom.FRandRange(120.0f, 430.0f));
+            const float Scale = ComputeScaleForMaxDimension(Mesh, LocalRandom.FRandRange(120.0f, 390.0f));
             const float GroundZ = WorldManager->GetTerrainHeightAt(P.X, P.Y);
             const FVector Normal = EstimateTerrainNormal(WorldManager, P.X, P.Y);
             FRotator Rotation = Normal.Rotation();
@@ -300,11 +298,11 @@ void ANWPremiumEnvironmentDirector::BuildPremiumEnvironment(ANWProceduralWorldMa
         }
     };
 
-    AddRockInstances(RocksPrimary, RockA, RockA ? 48 : 0, 7);
-    AddRockInstances(RocksSecondary, RockB ? RockB : RockA, (RockB || RockA) ? 32 : 0, 19);
+    AddRockInstances(RocksPrimary, RockA, RockA ? 38 : 0, 7);
+    AddRockInstances(RocksSecondary, RockB ? RockB : RockA, (RockB || RockA) ? 22 : 0, 19);
 
     UE_LOG(LogTemp, Warning,
-        TEXT("[ENV-V9] ambiente hibrido pronto | trees=%d | grass=%d | bushes=%d | rocks=%d | caminhos/nucleos livres | foliage shadow off"),
+        TEXT("[ENV-V10] ambiente estavel pronto | trees=%d | grass=%d | bushes=%d | rocks=%d | editor-icons/heavy-forest bloqueados"),
         TreesPrimary->GetInstanceCount() + TreesSecondary->GetInstanceCount(),
         GroundCover->GetInstanceCount(), Bushes->GetInstanceCount(),
         RocksPrimary->GetInstanceCount() + RocksSecondary->GetInstanceCount());
@@ -317,27 +315,43 @@ UStaticMesh* ANWPremiumEnvironmentDirector::FindBestNatureMesh(
     float MaxDimension,
     const FString& ExcludedPath) const
 {
-    int32 BestScore = TNumericLimits<int32>::Lowest();
-    UStaticMesh* BestMesh = nullptr;
+    struct FScoredCandidate
+    {
+        int32 Score = 0;
+        FAssetData Asset;
+        FString Path;
+    };
 
+    TArray<FScoredCandidate> Candidates;
     for (const FAssetData& Asset : StaticMeshAssets)
     {
         const FString AssetPath = Asset.PackageName.ToString() + TEXT(".") + Asset.AssetName.ToString();
         if (!ExcludedPath.IsEmpty() && AssetPath == ExcludedPath) { continue; }
-
         const int32 Score = ScoreNatureAsset(Asset, PrimaryKeywords, PreferredKeywords);
-        if (Score <= BestScore || Score < 20) { continue; }
+        if (Score < 20) { continue; }
+        Candidates.Add({ Score, Asset, AssetPath });
+    }
 
-        UStaticMesh* Mesh = Cast<UStaticMesh>(Asset.GetAsset());
+    Candidates.Sort([](const FScoredCandidate& A, const FScoredCandidate& B)
+    {
+        if (A.Score != B.Score) { return A.Score > B.Score; }
+        return A.Path < B.Path;
+    });
+
+    // Loading every improving candidate caused UE to build multiple 300-700 MB
+    // tree meshes and 8K textures before the game appeared. V10 only loads the
+    // best path-ranked candidates until one passes the physical bounds check.
+    const int32 MaxLoads = FMath::Min(10, Candidates.Num());
+    for (int32 Index = 0; Index < MaxLoads; ++Index)
+    {
+        UStaticMesh* Mesh = Cast<UStaticMesh>(Candidates[Index].Asset.GetAsset());
         if (!Mesh) { continue; }
         const FBoxSphereBounds Bounds = Mesh->GetBounds();
         const float MaxDim = FMath::Max3(static_cast<float>(Bounds.BoxExtent.X * 2.0), static_cast<float>(Bounds.BoxExtent.Y * 2.0), static_cast<float>(Bounds.BoxExtent.Z * 2.0));
         if (!FMath::IsFinite(MaxDim) || MaxDim < MinDimension || MaxDim > MaxDimension) { continue; }
-
-        BestScore = Score;
-        BestMesh = Mesh;
+        return Mesh;
     }
-    return BestMesh;
+    return nullptr;
 }
 
 UMaterialInterface* ANWPremiumEnvironmentDirector::FindBestGroundMaterial() const
@@ -379,9 +393,20 @@ UMaterialInterface* ANWPremiumEnvironmentDirector::FindBestGroundMaterial() cons
 int32 ANWPremiumEnvironmentDirector::ScoreNatureAsset(const FAssetData& Asset, const TArray<FString>& PrimaryKeywords, const TArray<FString>& PreferredKeywords) const
 {
     const FString Searchable = (Asset.PackageName.ToString() + TEXT("/") + Asset.AssetName.ToString()).ToLower();
+
+    static const TCHAR* HardBlocked[] = {
+        TEXT("globalfoliageactor"), TEXT("icon_"), TEXT("/icon"), TEXT("sock"), TEXT("socket"),
+        TEXT("/ui/"), TEXT("editor"), TEXT("preview"), TEXT("thumbnail"), TEXT("collision"), TEXT("proxy"),
+        TEXT("niagaraexamples"), TEXT("free_magic"), TEXT("paragongreystone/fx"), TEXT("/fx/"),
+        TEXT("weapon"), TEXT("character"), TEXT("skeletal"), TEXT("test/"), TEXT("/demo/")
+    };
+    for (const TCHAR* Token : HardBlocked)
+    {
+        if (Searchable.Contains(Token)) { return TNumericLimits<int32>::Lowest(); }
+    }
+
     bool bPrimary = false;
     int32 Score = 0;
-
     for (const FString& Keyword : PrimaryKeywords)
     {
         if (Searchable.Contains(Keyword.ToLower())) { bPrimary = true; Score += 36; }
@@ -393,22 +418,28 @@ int32 ANWPremiumEnvironmentDirector::ScoreNatureAsset(const FAssetData& Asset, c
         if (Searchable.Contains(Keyword.ToLower())) { Score += 14; }
     }
 
-    if (Searchable.Contains(TEXT("europeanbeech")) || Searchable.Contains(TEXT("european_beech"))) { Score += 260; }
-    if (Searchable.Contains(TEXT("europeanhornbeam")) || Searchable.Contains(TEXT("european_hornbeam"))) { Score += 245; }
-    if (Searchable.Contains(TEXT("megascans")) || Searchable.Contains(TEXT("quixel"))) { Score += 180; }
-    if (Searchable.Contains(TEXT("photogram")) || Searchable.Contains(TEXT("realistic"))) { Score += 95; }
-    if (Searchable.Contains(TEXT("nanite"))) { Score += 35; }
-    if (Searchable.Contains(TEXT("pbr")) || Searchable.Contains(TEXT("4k"))) { Score += 24; }
-    if (Searchable.Contains(TEXT("fab"))) { Score += 18; }
+    if (Searchable.Contains(TEXT("europeanbeech")) || Searchable.Contains(TEXT("european_beech"))) { Score += 125; }
+    if (Searchable.Contains(TEXT("europeanhornbeam")) || Searchable.Contains(TEXT("european_hornbeam"))) { Score += 120; }
+    if (Searchable.Contains(TEXT("simplewind"))) { Score += 150; }
+    if (Searchable.Contains(TEXT("seedling"))) { Score += 210; }
+    if (Searchable.Contains(TEXT("sapling"))) { Score += 190; }
+    if (Searchable.Contains(TEXT("megascans")) || Searchable.Contains(TEXT("quixel"))) { Score += 90; }
+    if (Searchable.Contains(TEXT("photogram")) || Searchable.Contains(TEXT("realistic"))) { Score += 65; }
+    if (Searchable.Contains(TEXT("pbr"))) { Score += 18; }
+    if (Searchable.Contains(TEXT("fab"))) { Score += 12; }
 
-    // KiteDemo remains a fallback because the V8 log showed its old materials
-    // frequently lacked the InstancedStaticMeshes permutation until resaved.
-    if (Searchable.Contains(TEXT("kitedemo"))) { Score -= 140; }
-    if (Searchable.Contains(TEXT("billboard"))) { Score -= 80; }
+    // Full forest/impostor assets were the main V9 startup regression: the log
+    // showed 300-700 MB mesh builds and 8K texture builds exceeding 1-4 GB each.
+    if (Searchable.Contains(TEXT("forest_")) || Searchable.Contains(TEXT("_forest"))) { Score -= 520; }
+    if (Searchable.Contains(TEXT("impostor"))) { Score -= 420; }
+    if (Searchable.Contains(TEXT("nanite"))) { Score -= 120; }
+    if (Searchable.Contains(TEXT("8k"))) { Score -= 180; }
+    if (Searchable.Contains(TEXT("billboard"))) { Score -= 180; }
+
+    if (Searchable.Contains(TEXT("kitedemo"))) { Score -= 35; }
     if (Searchable.Contains(TEXT("lowpoly")) || Searchable.Contains(TEXT("low_poly")) || Searchable.Contains(TEXT("low-poly"))) { Score -= 500; }
     if (Searchable.Contains(TEXT("stylized")) || Searchable.Contains(TEXT("stylised"))) { Score -= 450; }
     if (Searchable.Contains(TEXT("cartoon")) || Searchable.Contains(TEXT("toon")) || Searchable.Contains(TEXT("voxel"))) { Score -= 600; }
-    if (Searchable.Contains(TEXT("collision")) || Searchable.Contains(TEXT("proxy")) || Searchable.Contains(TEXT("preview"))) { Score -= 300; }
     return Score;
 }
 

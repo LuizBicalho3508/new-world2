@@ -1,13 +1,27 @@
 #include "NWCivilian.h"
 
 #include "Animation/AnimInstance.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Components/CapsuleComponent.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "Modules/ModuleManager.h"
 #include "Net/UnrealNetwork.h"
 #include "UObject/ConstructorHelpers.h"
+
+namespace
+{
+    bool HasAssetPackage(const FName PackageName)
+    {
+        IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+        TArray<FAssetData> Assets;
+        Registry.GetAssetsByPackageName(PackageName, Assets, true);
+        return !Assets.IsEmpty();
+    }
+}
 
 ANWCivilian::ANWCivilian()
 {
@@ -24,13 +38,16 @@ ANWCivilian::ANWCivilian()
 
     BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
     BodyMesh->SetupAttachment(GetCapsuleComponent());
-    BodyMesh->SetRelativeScale3D(FVector(0.52f, 0.52f, 1.45f));
+    BodyMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -6.0f));
+    BodyMesh->SetRelativeScale3D(FVector(0.38f, 0.38f, 1.55f));
     BodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> CapsuleMesh(TEXT("/Engine/BasicShapes/Capsule.Capsule"));
-    if (CapsuleMesh.Succeeded())
+    // UE 5.8 does not ship /Engine/BasicShapes/Capsule. Keep a valid fallback
+    // so missing optional NPC packs never create CDO load errors.
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> FallbackMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+    if (FallbackMesh.Succeeded())
     {
-        BodyMesh->SetStaticMesh(CapsuleMesh.Object);
+        BodyMesh->SetStaticMesh(FallbackMesh.Object);
     }
 }
 
@@ -38,17 +55,24 @@ void ANWCivilian::BeginPlay()
 {
     Super::BeginPlay();
 
-    USkeletalMesh* LicensedMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/ParagonSparrow/Characters/Heroes/Sparrow/Meshes/Sparrow.Sparrow"));
-    UClass* LicensedAnimClass = LoadClass<UAnimInstance>(nullptr, TEXT("/Game/ParagonSparrow/Characters/Heroes/Sparrow/Sparrow_AnimBlueprint.Sparrow_AnimBlueprint_C"));
-    if (LicensedMesh && LicensedAnimClass)
+    // Sparrow is optional. Verify package presence before hard-loading it so an
+    // absent Fab pack stays a normal fallback instead of a runtime warning.
+    const FName SparrowMeshPackage(TEXT("/Game/ParagonSparrow/Characters/Heroes/Sparrow/Meshes/Sparrow"));
+    const FName SparrowAnimPackage(TEXT("/Game/ParagonSparrow/Characters/Heroes/Sparrow/Sparrow_AnimBlueprint"));
+    if (HasAssetPackage(SparrowMeshPackage) && HasAssetPackage(SparrowAnimPackage))
     {
-        GetMesh()->SetSkeletalMeshAsset(LicensedMesh);
-        GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
-        GetMesh()->SetAnimInstanceClass(LicensedAnimClass);
-        GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -86.0f));
-        GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
-        GetMesh()->SetVisibility(true, true);
-        BodyMesh->SetVisibility(false, true);
+        USkeletalMesh* LicensedMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/ParagonSparrow/Characters/Heroes/Sparrow/Meshes/Sparrow.Sparrow"));
+        UClass* LicensedAnimClass = LoadClass<UAnimInstance>(nullptr, TEXT("/Game/ParagonSparrow/Characters/Heroes/Sparrow/Sparrow_AnimBlueprint.Sparrow_AnimBlueprint_C"));
+        if (LicensedMesh && LicensedAnimClass)
+        {
+            GetMesh()->SetSkeletalMeshAsset(LicensedMesh);
+            GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
+            GetMesh()->SetAnimInstanceClass(LicensedAnimClass);
+            GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, -86.0f));
+            GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
+            GetMesh()->SetVisibility(true, true);
+            BodyMesh->SetVisibility(false, true);
+        }
     }
 
     if (HasAuthority())
