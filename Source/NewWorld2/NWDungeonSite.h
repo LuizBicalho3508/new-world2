@@ -65,11 +65,11 @@ private:
     UPROPERTY(ReplicatedUsing=OnRep_DungeonConfiguration, EditAnywhere, Category="Dungeon", meta=(ClampMin="1", ClampMax="10"))
     int32 DungeonTier = 2;
 
-    // Packs Fab de arquitetura sao modulares e usam escalas/pivots distintos. Ate
-    // existir adapter por pack, as dungeons usam primitives de 100 cm, para as quais
-    // os transforms abaixo foram realmente autorados.
+    // V7 normaliza os meshes encontrados pela dimensao importada antes de aplicar os
+    // transforms autorados em unidades de 100 cm. Isso permite aproveitar Soul Cave,
+    // Gothic/Dungeon e outros packs Fab sem assumir a escala original do fornecedor.
     UPROPERTY(EditAnywhere, Category="Dungeon|Visual")
-    bool bUseInstalledDungeonMeshes = false;
+    bool bUseInstalledDungeonMeshes = true;
 
     // A formula atual soma Tier*2. Base 3 deixa cada dungeon tier 3 com 9 mobs,
     // mantendo as duas dungeons, roaming, bosses e encontro inicial dentro do teto
