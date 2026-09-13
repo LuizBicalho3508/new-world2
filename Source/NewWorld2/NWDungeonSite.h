@@ -65,6 +65,12 @@ private:
     UPROPERTY(ReplicatedUsing=OnRep_DungeonConfiguration, EditAnywhere, Category="Dungeon", meta=(ClampMin="1", ClampMax="10"))
     int32 DungeonTier = 2;
 
+    // Packs Fab de arquitetura sao modulares e usam escalas/pivots distintos. Ate
+    // existir adapter por pack, as dungeons usam primitives de 100 cm, para as quais
+    // os transforms abaixo foram realmente autorados.
+    UPROPERTY(EditAnywhere, Category="Dungeon|Visual")
+    bool bUseInstalledDungeonMeshes = false;
+
     // CPU-saver: dungeons continuam povoadas, mas sem manter dezenas de Characters pensando fora da tela.
     UPROPERTY(EditAnywhere, Category="Dungeon")
     int32 RegularEnemyCount = 10;
