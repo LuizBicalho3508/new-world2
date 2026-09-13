@@ -51,6 +51,11 @@ if [[ ! -x "$BUILD_SH" ]]; then
     exit 1
 fi
 
+# O log agora inclui preparacao, compilacao e runtime. Se o terminal fechar, basta
+# mandar `tail -n 300 ~/nw2-playable.log`.
+: > "$LOG_FILE"
+exec > >(tee -a "$LOG_FILE") 2>&1
+
 cd "$PROJECT_DIR"
 git config core.fileMode false || true
 
@@ -105,14 +110,13 @@ set +e
 "$EDITOR" "$PROJECT_FILE" "$GAME_MAP" \
     -game -log -stdout -FullStdOutLogOutput \
     -vulkan -sm6 -windowed -ResX="$RES_X" -ResY="$RES_Y" \
-    -NoVSync "-ExecCmds=$EXEC_CMDS" \
-    2>&1 | tee "$LOG_FILE"
-RC=${PIPESTATUS[0]}
+    -NoVSync "-ExecCmds=$EXEC_CMDS"
+RC=$?
 set -e
 
 echo
 echo "============================================================"
 echo " GAME FINALIZADO - EXIT CODE: $RC"
-echo " Log: $LOG_FILE"
+echo " Log completo: $LOG_FILE"
 echo "============================================================"
 exit "$RC"
