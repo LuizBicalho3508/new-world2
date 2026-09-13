@@ -34,11 +34,13 @@ ANWEnemy::ANWEnemy()
     BodyMesh = CreateDefaultSubobject<UStaticMeshComponent>(TEXT("BodyMesh"));
     BodyMesh->SetupAttachment(GetCapsuleComponent());
     BodyMesh->SetRelativeLocation(FVector(0.0f, 0.0f, -2.0f));
-    BodyMesh->SetRelativeScale3D(FVector(0.65f, 0.65f, 1.55f));
+    BodyMesh->SetRelativeScale3D(FVector(0.38f, 0.38f, 1.65f));
     BodyMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 
-    static ConstructorHelpers::FObjectFinder<UStaticMesh> CapsuleMesh(TEXT("/Engine/BasicShapes/Capsule.Capsule"));
-    if (CapsuleMesh.Succeeded()) { BodyMesh->SetStaticMesh(CapsuleMesh.Object); }
+    // UE 5.8 no longer contains /Engine/BasicShapes/Capsule. Cylinder is only
+    // a last-resort visual and is hidden as soon as EnemyVisualDirector applies a creature mesh.
+    static ConstructorHelpers::FObjectFinder<UStaticMesh> FallbackMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+    if (FallbackMesh.Succeeded()) { BodyMesh->SetStaticMesh(FallbackMesh.Object); }
 
     HealthBarWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("EnemyHealthBar"));
     HealthBarWidget->SetupAttachment(GetCapsuleComponent());
@@ -99,9 +101,6 @@ void ANWEnemy::ApplyArchetypeStats()
     PlayerAggroRange = 2350.0f;
     WorldTargetRange = 9000.0f;
 
-    // Premium V3: mobs comuns precisam sobreviver o suficiente para o jogador
-    // ler telegraph, barra de vida, esquiva, combo e status. O V2 usava 70-95 HP,
-    // menos que duas habilidades de starter gear.
     switch (EnemyArchetype)
     {
         case ENWEnemyArchetype::Zombie:
@@ -245,9 +244,6 @@ float ANWEnemy::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, 
 {
     if (!HasAuthority() || DamageAmount <= 0.0f) { return 0.0f; }
 
-    // Protecao contra one-shot acidental de um mob inteiro por uma unica aplicacao.
-    // Criticos e builds fortes continuam relevantes, mas o jogador sempre tem tempo
-    // de ler pelo menos uma resposta do inimigo. DoT continua aplicando normalmente.
     const float MaxSingleHitFraction = bWorldBoss ? 0.14f : 0.46f;
     const float CappedIncomingDamage = FMath::Min(DamageAmount, MaxHealth * MaxSingleHitFraction);
     const float AppliedDamage = Super::TakeDamage(CappedIncomingDamage, DamageEvent, EventInstigator, DamageCauser);
