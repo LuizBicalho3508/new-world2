@@ -13,7 +13,8 @@ class ANWEnemy;
  *
  * A mira e action-RPG/free aim: Q/E/R sempre podem ser usados sem target lock.
  * O ponto de cast vem da camera/crosshair. Soft aim existe somente para absorver
- * pequenas imprecisoes da terceira pessoa; ele nunca e requisito para disparar.
+ * imprecisoes normais de uma camera over-the-shoulder; ele nunca e requisito
+ * para disparar a habilidade.
  */
 UCLASS()
 class NEWORLD2_API ANWPremiumGameplayDirector : public AActor
@@ -65,13 +66,15 @@ private:
     TArray<FPendingAbilityAssist> PendingAssists;
 
     UPROPERTY(EditDefaultsOnly, Category="Premium|Combat", meta=(ClampMin="0.03", ClampMax="0.40"))
-    float AbilityVerificationDelay = 0.12f;
+    float AbilityVerificationDelay = 0.14f;
 
+    // V3: 220 cm ainda exigia precisao de FPS para melee na camera lateral.
+    // 380 cm mantem free aim, mas ajuda quando o reticulo passa perto da silhueta.
     UPROPERTY(EditDefaultsOnly, Category="Premium|Combat", meta=(ClampMin="80.0", ClampMax="500.0"))
-    float SoftAimRadius = 220.0f;
+    float SoftAimRadius = 380.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="Premium|Combat", meta=(ClampMin="1000.0", ClampMax="12000.0"))
-    float FreeAimTraceRange = 6500.0f;
+    float FreeAimTraceRange = 7000.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="Premium|HUD", meta=(ClampMin="0.10", ClampMax="2.0"))
     float HudEnsureInterval = 0.50f;
@@ -80,7 +83,7 @@ private:
     int32 DesiredNearbyTrainingEnemies = 5;
 
     UPROPERTY(EditDefaultsOnly, Category="Premium|Playtest", meta=(ClampMin="500.0", ClampMax="3000.0"))
-    float TrainingEncounterRadius = 1750.0f;
+    float TrainingEncounterRadius = 1900.0f;
 
     float HudAccumulator = 0.0f;
     float TrainingAccumulator = 0.0f;
