@@ -113,7 +113,7 @@ grep -q '\[MOB-ANIM-V8\]' Source/NewWorld2/NWEnemyAnimationDirector.cpp || fail 
 grep -q '\[STARTUP-V8\]' Source/NewWorld2/NWStartupWarmupDirector.cpp || fail "startup V8 ausente"
 grep -q 'HasOutstandingCompilationRequests' Source/NewWorld2/NWStartupWarmupDirector.cpp || fail "controle Niagara V8 ausente"
 grep -q '^r.PSOPrecache.ProxyCreationStrategy=1$' Config/DefaultEngine.ini || fail "PSO Strategy atual ausente"
-if grep -q 'ProxyCreationWhenPSOReady\|ProxyCreationDelayStrategy\|WaitForHighPriorityRequestsOnly' Config/DefaultEngine.ini; then
+if grep -qE '^r\.PSOPrecache\.(ProxyCreationWhenPSOReady|ProxyCreationDelayStrategy)=|^r\.PSOPrecaching\.WaitForHighPriorityRequestsOnly=' Config/DefaultEngine.ini; then
     fail "CVar PSO deprecated/dummy voltou ao DefaultEngine.ini"
 fi
 
@@ -220,18 +220,18 @@ if [[ -s "$RUNTIME_LOG" ]]; then
     BASE_COUNT="$(grep -ac '\[PLAYER-BASE-V8\] corpo neutro ativo' "$RUNTIME_LOG" || true)"
     ARMOR_COUNT="$(grep -ac '\[PLAYER-GEAR-V8\] armadura VESTIDA' "$RUNTIME_LOG" || true)"
     WEAPON_COUNT="$(grep -ac '\[PLAYER-GEAR-V8\] arma visivel' "$RUNTIME_LOG" || true)"
-    STAFF_COUNT="$(grep -a '\[PLAYER-GEAR-V8\] arma visivel: Cajado Arcano' "$RUNTIME_LOG" | wc -l | tr -d ' ')"
+    STAFF_COUNT="$(grep -ac '\[PLAYER-GEAR-V8\] arma visivel: Cajado Arcano' "$RUNTIME_LOG" || true)"
     STARTUP_TIMEOUTS="$(grep -ac '\[STARTUP-V8\].*motivo=timeout' "$RUNTIME_LOG" || true)"
     MOB_EMPTY="$(grep -a '\[MOB-ANIM-V8\]' "$RUNTIME_LOG" | grep -c 'idle=-.*run=-.*attack=-' || true)"
 
     echo
     echo "Resumo V8:"
-    echo "  corpo neutro ativado               : $BASE_COUNT"
-    echo "  pecas de armadura realmente vestidas: $ARMOR_COUNT"
-    echo "  armas visiveis aplicadas            : $WEAPON_COUNT"
-    echo "  cajado visual aplicado              : $STAFF_COUNT"
-    echo "  startup timeout                      : $STARTUP_TIMEOUTS"
-    echo "  familias de mob sem animacao propria : $MOB_EMPTY"
+    echo "  corpo neutro ativado                 : $BASE_COUNT"
+    echo "  pecas de armadura realmente vestidas : $ARMOR_COUNT"
+    echo "  armas visiveis aplicadas              : $WEAPON_COUNT"
+    echo "  cajado visual aplicado                : $STAFF_COUNT"
+    echo "  startup timeout                        : $STARTUP_TIMEOUTS"
+    echo "  familias de mob sem animacao propria  : $MOB_EMPTY"
 
     if (( BASE_COUNT == 0 )); then
         echo "AVISO: o teste ainda usou fallback. Adicione Third Person/Manny ou Game Animation Sample."
@@ -262,6 +262,5 @@ echo " GPU     : $GPU_LOG"
 echo " Assets  : $ASSET_REPORT"
 echo "============================================================"
 
-# Ctrl+C no editor e encerramento normal de playtest Linux.
 if (( GAME_RC == 130 )); then exit 0; fi
 exit "$GAME_RC"
