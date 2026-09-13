@@ -92,7 +92,13 @@ void ANWGameMode::StartPlay()
         UE_LOG(LogTemp, Display, TEXT("[BOOT] Asset Registry /Game sincronizado antes do play."));
     }
 
-    EnsureWorldManager();
+    ANWProceduralWorldManager* RuntimeWorldManager = EnsureWorldManager();
+    if (RuntimeWorldManager)
+    {
+        // Garante que mapas gerados com defaults antigos (180s) nao mantenham um
+        // timer serializado que reconstrua o mundo durante o combate.
+        RuntimeWorldManager->DisableAutomaticEvolution();
+    }
 
     if (GetWorld())
     {
@@ -164,8 +170,10 @@ void ANWGameMode::RestartPlayer(AController* NewPlayer)
     }
 
     ANWProceduralWorldManager* Manager = EnsureWorldManager();
-    const float SpawnZ = Manager ? Manager->GetTerrainHeightAt(0.0f, 0.0f) + 110.0f : 1200.0f;
-    const FTransform SpawnTransform(FRotator(0.0f, 0.0f, 0.0f), FVector(0.0f, 0.0f, SpawnZ));
+    const float SpawnX = 900.0f;
+    const float SpawnY = 900.0f;
+    const float SpawnZ = Manager ? Manager->GetTerrainHeightAt(SpawnX, SpawnY) + 110.0f : 1200.0f;
+    const FTransform SpawnTransform(FRotator(0.0f, 0.0f, 0.0f), FVector(SpawnX, SpawnY, SpawnZ));
 
     RestartPlayerAtTransform(NewPlayer, SpawnTransform);
 }
