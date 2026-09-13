@@ -24,7 +24,16 @@ namespace
             TEXT("/demo/"),
             TEXT("/preview"),
             TEXT("/tutorial"),
-            TEXT("/test/")
+            TEXT("/test/"),
+            // O playtest V3 mostrou assets antigos/retarget quebrados neste pack.
+            TEXT("/paragonminions/"),
+            TEXT("/fx/skeletalmeshes/"),
+            TEXT("_proto"),
+            TEXT("/buff/"),
+            // Skins Greystone Novaborn/WhiteTiger recriaram Clothing Actors e o
+            // crash ocorreu em GetGPUSkinAPEXClothVertexFactoryUniformShaderParameters.
+            // No V4 nenhuma skin arbitraria entra automaticamente em mobs.
+            TEXT("/skins/")
         };
         for (const TCHAR* Token : Blocked)
         {
@@ -32,12 +41,19 @@ namespace
         }
         return false;
     }
+
+    bool IsSafeRuntimeMesh(USkeletalMesh* Mesh)
+    {
+        return Mesh && Mesh->GetSkeleton() && !Mesh->HasActiveClothingAssets();
+    }
 }
 
 ANWEnemyVisualDirector::ANWEnemyVisualDirector()
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.TickInterval = 0.10f;
+    // Selecionar/aplicar mesh e um trabalho eventual. 10 Hz fazia scans de atores
+    // desnecessarios no i7-2600S; 4 Hz ainda reage rapidamente a novos spawns.
+    PrimaryActorTick.TickInterval = 0.25f;
     bReplicates = false;
 }
 
@@ -74,19 +90,19 @@ void ANWEnemyVisualDirector::ScanAssets()
     AnimFilter.bRecursivePaths = true;
     Registry.GetAssets(AnimFilter, AnimBlueprintAssets);
 
-    int32 SafeMeshes = 0;
+    int32 SafePathMeshes = 0;
     int32 SafeAnimBPs = 0;
     for (const FAssetData& Asset : SkeletalMeshAssets)
     {
-        if (!IsUnsafeRuntimeAssetPath(Asset.PackageName.ToString())) { ++SafeMeshes; }
+        if (!IsUnsafeRuntimeAssetPath(Asset.PackageName.ToString())) { ++SafePathMeshes; }
     }
     for (const FAssetData& Asset : AnimBlueprintAssets)
     {
         if (!IsUnsafeRuntimeAssetPath(Asset.PackageName.ToString())) { ++SafeAnimBPs; }
     }
 
-    UE_LOG(LogTemp, Display, TEXT("[MOB-VISUAL-V3] catalogo: skeletal=%d (seguros=%d) animbp=%d (seguros=%d)"),
-        SkeletalMeshAssets.Num(), SafeMeshes, AnimBlueprintAssets.Num(), SafeAnimBPs);
+    UE_LOG(LogTemp, Display, TEXT("[MOB-VISUAL-V4] catalogo: skeletal=%d (paths seguros=%d) animbp=%d (seguros=%d) | cloth sera rejeitado antes de equipar"),
+        SkeletalMeshAssets.Num(), SafePathMeshes, AnimBlueprintAssets.Num(), SafeAnimBPs);
 }
 
 void ANWEnemyVisualDirector::RefreshEnemyVisuals()
@@ -172,16 +188,20 @@ bool ANWEnemyVisualDirector::ApplyVisual(ANWEnemy* Enemy)
     {
         HideDebugMeshes(Enemy);
         Enemy->GetMesh()->SetVisibility(false, true);
-        UE_LOG(LogTemp, Warning, TEXT("[MOB-VISUAL-V3] nenhum skeletal mesh seguro encontrado para %s; placeholder geometrico ocultado."), *Enemy->GetName());
+        UE_LOG(LogTemp, Warning, TEXT("[MOB-VISUAL-V4] nenhum skeletal mesh sem cloth/seguro encontrado para %s; placeholder geometrico ocultado."), *Enemy->GetName());
+        return false;
+    }
+
+    if (Mesh->HasActiveClothingAssets())
+    {
+        UE_LOG(LogTemp, Error, TEXT("[CLOTH-SAFETY-V4] BLOQUEADO antes de SetSkeletalMeshAsset: %s"), *Mesh->GetPathName());
         return false;
     }
 
     Enemy->GetMesh()->SetSkeletalMeshAsset(Mesh);
 
-    // V2 executava o AnimBlueprint de herois diretamente em NPCs e o log registrou
-    // Divide_DoubleDouble no Greystone_AnimBlueprint. O V3 usa o AnimBP apenas como
-    // prova de que o skeleton possui conteudo de animacao; a execucao fica a cargo
-    // do NWEnemyAnimationDirector com AnimSequence segura.
+    // NPCs nao executam AnimBlueprint de heroi. Isso evita tanto logica de player
+    // quanto caminhos de cloth/pose que nao pertencem ao ator de AI.
     Enemy->GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
     Enemy->GetMesh()->SetAnimInstanceClass(nullptr);
 
@@ -214,7 +234,7 @@ bool ANWEnemyVisualDirector::ApplyVisual(ANWEnemy* Enemy)
 
     HideDebugMeshes(Enemy);
 
-    UE_LOG(LogTemp, Warning, TEXT("[MOB-VISUAL-V3] %s archetype=%d boss=%s -> %s | anim=SequenceDirector | hp=%.0f"),
+    UE_LOG(LogTemp, Warning, TEXT("[MOB-VISUAL-V4] %s archetype=%d boss=%s -> %s | cloth=NAO | anim=SequenceDirector | hp=%.0f"),
         *Enemy->GetName(),
         static_cast<int32>(Enemy->GetEnemyArchetype()),
         Enemy->IsWorldBoss() ? TEXT("sim") : TEXT("nao"),
@@ -286,9 +306,10 @@ USkeletalMesh* ANWEnemyVisualDirector::FindBestByKeywords(const TArray<FString>&
     {
         const int32 Score = ScoreAsset(Asset, Primary, Preferred, true);
         if (Score <= BestScore) { continue; }
+        if (IsUnsafeRuntimeAssetPath(Asset.PackageName.ToString())) { continue; }
 
         USkeletalMesh* Mesh = Cast<USkeletalMesh>(Asset.GetAsset());
-        if (!Mesh || !Mesh->GetSkeleton()) { continue; }
+        if (!IsSafeRuntimeMesh(Mesh)) { continue; }
 
         UClass* AnimClass = FindAnimClass(Mesh, Preferred);
         if (!AnimClass) { continue; }
@@ -344,10 +365,19 @@ USkeletalMesh* ANWEnemyVisualDirector::FindBestParagonFallback(const ANWEnemy* E
         }
         if (Searchable.Contains(TEXT("hero"))) { Score += 12; }
         if (Searchable.Contains(TEXT("mesh"))) { Score += 5; }
-        if (Searchable.Contains(TEXT("skin"))) { Score += 8; }
+        // Base meshes sao preferidos. Skins sao bloqueadas para remover APEX cloth.
+        if (!Searchable.Contains(TEXT("/skins/"))) { Score += 35; }
 
         USkeletalMesh* Mesh = Cast<USkeletalMesh>(Asset.GetAsset());
-        if (!Mesh || !Mesh->GetSkeleton()) { continue; }
+        if (!IsSafeRuntimeMesh(Mesh))
+        {
+            if (Mesh && Mesh->HasActiveClothingAssets())
+            {
+                UE_LOG(LogTemp, Display, TEXT("[CLOTH-SAFETY-V4] candidato ignorado: %s"), *Mesh->GetPathName());
+            }
+            continue;
+        }
+
         UClass* AnimClass = FindAnimClass(Mesh, Preferred);
         if (!AnimClass) { continue; }
 
