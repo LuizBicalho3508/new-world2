@@ -10,6 +10,7 @@
 #include "Modules/ModuleManager.h"
 #include "NWCharacter.h"
 #include "NWEnemy.h"
+#include "NWEnemyAnimationDirector.h"
 #include "NWEnemyVisualDirector.h"
 #include "NWGameplaySafetyActor.h"
 #include "NWLightingSafetyActor.h"
@@ -133,16 +134,15 @@ void ANWGameMode::StartPlay()
         SpawnSingletonActor<ANWLightingSafetyActor>(World, TEXT("LightingSafetyActor"));
         SpawnSingletonActor<ANWGameplaySafetyActor>(World, TEXT("GameplaySafetyActor"));
 
-        // Premium V3: nao inicializamos mais o presentation manager legado. Ele
-        // tambem tentava apresentar inimigos e gerava [MONSTRO-VISUAL], scans
-        // redundantes e loads de assets antigos. Player base, mundo, mobs e VFX
-        // agora possuem donos separados e deterministas.
+        // Premium V3: o presentation manager legado nao e mais inicializado. Player,
+        // ambiente, visual de mobs, animacao de mobs e VFX possuem donos separados.
         SpawnSingletonActor<ANWPremiumEnvironmentDirector>(World, TEXT("PremiumEnvironmentDirector"));
         SpawnSingletonActor<ANWEnemyVisualDirector>(World, TEXT("EnemyVisualDirector"));
+        SpawnSingletonActor<ANWEnemyAnimationDirector>(World, TEXT("EnemyAnimationDirector"));
         SpawnSingletonActor<ANWPremiumGameplayDirector>(World, TEXT("PremiumGameplayDirector"));
         SpawnSingletonActor<ANWPremiumVFXDirector>(World, TEXT("PremiumVFXDirector"));
 
-        UE_LOG(LogTemp, Warning, TEXT("[PREMIUM-V3] bootstrap completo: ambiente real + HP de mobs + free aim + VFX curado/preaquecido + animacoes estabilizadas."));
+        UE_LOG(LogTemp, Warning, TEXT("[PREMIUM-V3] bootstrap completo: ambiente real + HP de mobs + animacao segura + free aim + VFX curado/preaquecido."));
     }
 
     Super::StartPlay();
