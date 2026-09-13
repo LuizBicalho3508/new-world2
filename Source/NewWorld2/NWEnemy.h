@@ -18,6 +18,7 @@ public:
     ANWEnemy();
 
     virtual void Tick(float DeltaSeconds) override;
+    virtual void EndPlay(const EEndPlayReason::Type EndPlayReason) override;
     virtual float TakeDamage(float DamageAmount, struct FDamageEvent const& DamageEvent, class AController* EventInstigator, AActor* DamageCauser) override;
     virtual void GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const override;
 
@@ -32,6 +33,9 @@ public:
 
     UFUNCTION(BlueprintPure, Category="Combat")
     float GetMaxHealth() const { return MaxHealth; }
+
+    UFUNCTION(BlueprintPure, Category="Combat")
+    float GetPoiseRatio() const { return MaxPoise > 0.0f ? Poise / MaxPoise : 0.0f; }
 
     UFUNCTION(BlueprintPure, Category="Enemy")
     ENWEnemyArchetype GetEnemyArchetype() const { return EnemyArchetype; }
@@ -59,6 +63,18 @@ protected:
 
     UPROPERTY(ReplicatedUsing=OnRep_Health, VisibleAnywhere, Category="Combat")
     float Health = 340.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category="Combat|Poise")
+    float MaxPoise = 100.0f;
+
+    UPROPERTY(Replicated, VisibleAnywhere, Category="Combat|Poise")
+    float Poise = 100.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category="Combat|Poise")
+    float PoiseRecoveryDelay = 2.0f;
+
+    UPROPERTY(EditDefaultsOnly, Category="Combat|Poise")
+    float PoiseRecoveryPerSecond = 34.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="AI")
     float MoveSpeed = 235.0f;
@@ -115,4 +131,5 @@ private:
     float NextTargetRefreshTime = -1000.0f;
     float LastAttackTime = -1000.0f;
     float StaggeredUntilTime = -1000.0f;
+    float LastPoiseDamageTime = -1000.0f;
 };
