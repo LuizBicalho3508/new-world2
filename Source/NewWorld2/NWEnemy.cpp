@@ -1,19 +1,13 @@
 #include "NWEnemy.h"
 
-#include "Animation/AnimInstance.h"
-#include "AssetRegistry/AssetData.h"
-#include "AssetRegistry/AssetRegistryModule.h"
 #include "Components/CapsuleComponent.h"
-#include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
-#include "Engine/SkeletalMesh.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/Controller.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
-#include "Modules/ModuleManager.h"
 #include "Net/UnrealNetwork.h"
 #include "NWCivilian.h"
 #include "NWCharacter.h"
@@ -50,8 +44,10 @@ void ANWEnemy::BeginPlay()
     Super::BeginPlay();
     ApplyArchetypeStats();
     if (HasAuthority()) { Health = MaxHealth; }
-    GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
-    TryApplyLicensedCreatureVisual();
+    if (GetCharacterMovement()) { GetCharacterMovement()->MaxWalkSpeed = MoveSpeed; }
+
+    // Visual licenciado e responsabilidade exclusiva do NWContentPresentationManager.
+    // O ator de AI nao percorre mais o Asset Registry em BeginPlay/ConfigureEnemy.
 }
 
 void ANWEnemy::ConfigureEnemy(ENWEnemyArchetype InArchetype, bool bInWorldBoss, int32 InBossTier)
@@ -61,7 +57,6 @@ void ANWEnemy::ConfigureEnemy(ENWEnemyArchetype InArchetype, bool bInWorldBoss, 
     BossTier = FMath::Clamp(InBossTier, 1, 8);
     ApplyArchetypeStats();
 
-    // Bosses continuam responsivos; mobs comuns usam frequencia menor para poupar Game Thread.
     PrimaryActorTick.TickInterval = bWorldBoss ? 0.08f : NormalThinkInterval;
     NetUpdateFrequency = bWorldBoss ? 15.0f : 10.0f;
     MinNetUpdateFrequency = bWorldBoss ? 7.5f : 4.0f;
@@ -73,11 +68,16 @@ void ANWEnemy::ConfigureEnemy(ENWEnemyArchetype InArchetype, bool bInWorldBoss, 
         Health = MaxHealth;
         ForceNetUpdate();
     }
-    TryApplyLicensedCreatureVisual();
 }
 
 void ANWEnemy::ApplyArchetypeStats()
 {
+    // Sempre restaura o capsule base antes de aplicar modificadores de boss. Isso
+    // deixa reconfiguracao/replicacao idempotente em vez de acumular tamanho antigo.
+    if (GetCapsuleComponent()) { GetCapsuleComponent()->SetCapsuleSize(42.0f, 88.0f); }
+    PlayerAggroRange = 2100.0f;
+    WorldTargetRange = 9000.0f;
+
     switch (EnemyArchetype)
     {
         case ENWEnemyArchetype::Zombie:
@@ -113,7 +113,7 @@ void ANWEnemy::ApplyArchetypeStats()
         MoveSpeed = FMath::Max(190.0f, MoveSpeed * 0.92f);
         PlayerAggroRange = 4200.0f;
         WorldTargetRange = 6000.0f;
-        GetCapsuleComponent()->SetCapsuleSize(62.0f, 120.0f);
+        if (GetCapsuleComponent()) { GetCapsuleComponent()->SetCapsuleSize(62.0f, 120.0f); }
     }
 
     if (GetCharacterMovement()) { GetCharacterMovement()->MaxWalkSpeed = MoveSpeed; }
@@ -132,8 +132,6 @@ void ANWEnemy::Tick(float DeltaSeconds)
         return;
     }
 
-    // AI LOD: mobs fora da area relevante de qualquer jogador deixam de simular combate/movimento.
-    // A malha continua existindo/replicada, mas a CPU deixa de fazer buscas de alvo a 20 Hz.
     const float NearestPlayerDistance = GetNearestPlayerDistance();
     if (!bWorldBoss && NearestPlayerDistance > SleepDistanceFromPlayers)
     {
@@ -248,78 +246,6 @@ void ANWEnemy::SpawnProceduralLoot(AController* EventInstigator, AActor* DamageC
     UE_LOG(LogTemp, Warning, TEXT("[BOSS] derrotado: 3 lendarios + Pocao da Armadura Brutal Lendaria gerados."));
 }
 
-USkeletalMesh* ANWEnemy::FindInstalledCreatureMesh(const TArray<FString>& Keywords) const
-{
-    IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
-    FARFilter Filter;
-    Filter.PackagePaths.Add(FName(TEXT("/Game")));
-    Filter.ClassPaths.Add(USkeletalMesh::StaticClass()->GetClassPathName());
-    Filter.bRecursivePaths = true;
-
-    TArray<FAssetData> Assets;
-    Registry.GetAssets(Filter, Assets);
-    int32 BestScore = 0;
-    FAssetData BestAsset;
-    for (const FAssetData& Asset : Assets)
-    {
-        const FString Searchable = Asset.PackageName.ToString() + TEXT("/") + Asset.AssetName.ToString();
-        int32 Score = 0;
-        for (const FString& Keyword : Keywords)
-        {
-            if (Searchable.Contains(Keyword, ESearchCase::IgnoreCase)) { Score += 10; }
-        }
-        if (Score > BestScore)
-        {
-            BestScore = Score;
-            BestAsset = Asset;
-        }
-    }
-    return BestScore > 0 ? Cast<USkeletalMesh>(BestAsset.GetAsset()) : nullptr;
-}
-
-void ANWEnemy::TryApplyLicensedCreatureVisual()
-{
-    USkeletalMesh* LicensedMesh = nullptr;
-    UClass* LicensedAnimClass = nullptr;
-
-    if (bWorldBoss)
-    {
-        LicensedMesh = FindInstalledCreatureMesh({ TEXT("Boss"), TEXT("Demon"), TEXT("Warlord"), TEXT("Monster") });
-    }
-    else if (EnemyArchetype == ENWEnemyArchetype::Zombie)
-    {
-        LicensedMesh = FindInstalledCreatureMesh({ TEXT("Zombie"), TEXT("Undead"), TEXT("Ghoul") });
-    }
-    else if (EnemyArchetype == ENWEnemyArchetype::Ghost)
-    {
-        LicensedMesh = FindInstalledCreatureMesh({ TEXT("Ghost"), TEXT("Wraith"), TEXT("Specter"), TEXT("Spirit") });
-    }
-    else
-    {
-        LicensedMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/ParagonGrux/Characters/Heroes/Grux/Meshes/Grux.Grux"));
-        LicensedAnimClass = LoadClass<UAnimInstance>(nullptr, TEXT("/Game/ParagonGrux/Characters/Heroes/Grux/Grux_AnimBlueprint.Grux_AnimBlueprint_C"));
-    }
-
-    if (!LicensedMesh && EnemyArchetype != ENWEnemyArchetype::Brute)
-    {
-        LicensedMesh = LoadObject<USkeletalMesh>(nullptr, TEXT("/Game/ParagonGrux/Characters/Heroes/Grux/Meshes/Grux.Grux"));
-        LicensedAnimClass = LoadClass<UAnimInstance>(nullptr, TEXT("/Game/ParagonGrux/Characters/Heroes/Grux/Grux_AnimBlueprint.Grux_AnimBlueprint_C"));
-    }
-    if (!LicensedMesh) { return; }
-
-    GetMesh()->SetSkeletalMeshAsset(LicensedMesh);
-    if (LicensedAnimClass)
-    {
-        GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
-        GetMesh()->SetAnimInstanceClass(LicensedAnimClass);
-    }
-    GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, bWorldBoss ? -120.0f : -88.0f));
-    GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
-    GetMesh()->SetRelativeScale3D(bWorldBoss ? FVector(1.35f) : FVector(1.0f));
-    GetMesh()->SetVisibility(true, true);
-    BodyMesh->SetVisibility(false, true);
-}
-
 void ANWEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetimeProps) const
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
@@ -330,10 +256,12 @@ void ANWEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetime
 }
 
 void ANWEnemy::OnRep_Health() {}
+
 void ANWEnemy::OnRep_EnemyIdentity()
 {
     ApplyArchetypeStats();
-    TryApplyLicensedCreatureVisual();
+    // O presentation manager observa a identidade replicada e atualiza a malha no
+    // tick seguinte. Nenhuma busca de assets e feita dentro da AI.
 }
 
 float ANWEnemy::GetNearestPlayerDistance() const
