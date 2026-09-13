@@ -14,13 +14,11 @@ class ANWEnemy;
  * Responsabilidades:
  *  - garantir que o HUD nativo exista depois da possessao local;
  *  - observar casts pelas transicoes de cooldown;
+ *  - gerar feedback visual deterministico sem Niagara dinamico;
  *  - caso uma habilidade de dano tenha sido aceita mas nao tenha acertado nenhum
  *    inimigo por causa do sweep/camera de terceira pessoa, aplicar aim-assist como
  *    fallback APENAS depois de confirmar que nenhum alvo perdeu vida no cast nativo;
  *  - produzir logs objetivos para o proximo teste.
- *
- * Ele nao substitui o sistema de combate; apenas cobre falhas de aquisicao de alvo
- * no prototipo enquanto os anim notifies/targeting final ainda sao autorados.
  */
 UCLASS()
 class NEWORLD2_API ANWPremiumGameplayDirector : public AActor
@@ -56,6 +54,7 @@ private:
     void DetectAbilityCasts();
     void ResolvePendingAssists();
     void QueueAbilityAssist(ANWCharacter* Character, ENWWeaponType Weapon, int32 AbilityIndex);
+    void SpawnCastFeedback(ANWCharacter* Character, const FNWWeaponAbilityDefinition& Ability, int32 AbilityIndex);
     bool NativeCastDamagedEnemy(const FPendingAbilityAssist& Pending) const;
     int32 ApplyFallbackAbilityHit(const FPendingAbilityAssist& Pending);
     ANWEnemy* FindBestAimTarget(ANWCharacter* Character, float MaxRange) const;
