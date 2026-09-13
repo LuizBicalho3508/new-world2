@@ -9,7 +9,6 @@
 #include "Kismet/GameplayStatics.h"
 #include "Modules/ModuleManager.h"
 #include "NWCharacter.h"
-#include "NWContentPresentationManager.h"
 #include "NWEnemy.h"
 #include "NWEnemyVisualDirector.h"
 #include "NWGameplaySafetyActor.h"
@@ -114,8 +113,6 @@ void ANWGameMode::StartPlay()
 {
     NormalizePlayableInputMappings();
 
-    // Sincroniza metadata uma unica vez antes do play. Os diretores premium usam
-    // esse catalogo para escolher assets reais e depois trabalham com caches.
     {
         IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
         const TArray<FString> PathsToScan = { TEXT("/Game") };
@@ -136,17 +133,10 @@ void ANWGameMode::StartPlay()
         SpawnSingletonActor<ANWLightingSafetyActor>(World, TEXT("LightingSafetyActor"));
         SpawnSingletonActor<ANWGameplaySafetyActor>(World, TEXT("GameplaySafetyActor"));
 
-        if (!HasActorOfClass<ANWContentPresentationManager>(World))
-        {
-            FActorSpawnParameters Params;
-            Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-            if (World->SpawnActor<ANWContentPresentationManager>(
-                ANWContentPresentationManager::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params))
-            {
-                UE_LOG(LogTemp, Display, TEXT("[VISUAL] presentation manager de player/armas ativo; mobs pertencem ao EnemyVisualDirector."));
-            }
-        }
-
+        // Premium V3: nao inicializamos mais o presentation manager legado. Ele
+        // tambem tentava apresentar inimigos e gerava [MONSTRO-VISUAL], scans
+        // redundantes e loads de assets antigos. Player base, mundo, mobs e VFX
+        // agora possuem donos separados e deterministas.
         SpawnSingletonActor<ANWPremiumEnvironmentDirector>(World, TEXT("PremiumEnvironmentDirector"));
         SpawnSingletonActor<ANWEnemyVisualDirector>(World, TEXT("EnemyVisualDirector"));
         SpawnSingletonActor<ANWPremiumGameplayDirector>(World, TEXT("PremiumGameplayDirector"));
