@@ -1,7 +1,9 @@
 #include "NWStartupWarmupDirector.h"
 
 #include "Engine/World.h"
+#include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
+#include "NWPremiumHUDDirector.h"
 #include "NWStartupLoadingWidget.h"
 #include "ShaderPipelineCache.h"
 
@@ -20,6 +22,21 @@ void ANWStartupWarmupDirector::BeginPlay()
         bFinished = true;
         SetActorTickEnabled(false);
         return;
+    }
+
+    // O HUD V4 nasce junto do gate, mas fica coberto pela tela de carregamento ate
+    // o warm-up terminar. Assim a camada do player ja esta pronta no primeiro frame jogavel.
+    bool bHasHUDDirector = false;
+    for (TActorIterator<ANWPremiumHUDDirector> It(GetWorld()); It; ++It)
+    {
+        bHasHUDDirector = true;
+        break;
+    }
+    if (!bHasHUDDirector)
+    {
+        FActorSpawnParameters Params;
+        Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        GetWorld()->SpawnActor<ANWPremiumHUDDirector>(ANWPremiumHUDDirector::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
     }
 
     FShaderPipelineCache::SetBatchMode(FShaderPipelineCache::BatchMode::Fast);
