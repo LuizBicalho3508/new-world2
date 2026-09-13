@@ -7,6 +7,7 @@
 #include "Components/TextRenderComponent.h"
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
+#include "Materials/MaterialInterface.h"
 #include "Modules/ModuleManager.h"
 #include "Net/UnrealNetwork.h"
 #include "NWDungeonGuardian.h"
@@ -15,6 +16,18 @@
 
 namespace
 {
+    void PrepareDungeonMeshForInstancing(UStaticMesh* Mesh)
+    {
+        if (!Mesh) { return; }
+        for (const FStaticMaterial& Slot : Mesh->GetStaticMaterials())
+        {
+            if (UMaterialInterface* Material = Slot.MaterialInterface)
+            {
+                Material->CheckMaterialUsage_Concurrent(MATUSAGE_InstancedStaticMeshes);
+            }
+        }
+    }
+
     void NormalizeDungeonMesh(UHierarchicalInstancedStaticMeshComponent* Component)
     {
         if (!Component) { return; }
@@ -25,6 +38,7 @@ namespace
             return;
         }
 
+        PrepareDungeonMeshForInstancing(Mesh);
         const FBoxSphereBounds Bounds = Mesh->GetBounds();
         const float MaxDimension = FMath::Max3(
             static_cast<float>(Bounds.BoxExtent.X * 2.0),
@@ -40,10 +54,10 @@ namespace
     {
         const FString Path = InPath.ToLower();
         static const TCHAR* Blocked[] = {
-            TEXT("/character"), TEXT("/weapon"), TEXT("/armor"), TEXT("/armour"),
-            TEXT("/animation"), TEXT("/vfx"), TEXT("/fx/"), TEXT("/ui/"),
-            TEXT("preview"), TEXT("tutorial"), TEXT("collision"), TEXT("proxy"),
-            TEXT("lowpoly"), TEXT("stylized"), TEXT("cartoon")
+            TEXT("/character"), TEXT("/weapon"), TEXT("/weapons"), TEXT("/sword"), TEXT("/dagger"),
+            TEXT("/shield"), TEXT("/bow"), TEXT("/rifle"), TEXT("/gun"), TEXT("/staff"),
+            TEXT("/armor"), TEXT("/armour"), TEXT("/animation"), TEXT("/vfx"), TEXT("/fx/"), TEXT("/ui/"),
+            TEXT("preview"), TEXT("tutorial"), TEXT("collision"), TEXT("proxy"), TEXT("lowpoly"), TEXT("stylized"), TEXT("cartoon")
         };
         for (const TCHAR* Token : Blocked)
         {
@@ -95,7 +109,6 @@ void ANWDungeonSite::ConfigureDungeon(ENWDungeonType InType, int32 InSeed, int32
     DungeonType = InType;
     DungeonSeed = InSeed;
     DungeonTier = FMath::Clamp(InTier, 1, 10);
-
     if (HasAuthority()) { ForceNetUpdate(); }
 
     if (HasActorBegunPlay())
@@ -114,10 +127,7 @@ void ANWDungeonSite::BeginPlay()
 {
     Super::BeginPlay();
     BuildDungeonGeometry();
-    if (HasAuthority())
-    {
-        SpawnDungeonPopulation();
-    }
+    if (HasAuthority()) { SpawnDungeonPopulation(); }
 }
 
 FName ANWDungeonSite::GetDungeonThemeName() const
@@ -136,10 +146,12 @@ void ANWDungeonSite::BuildDungeonGeometry()
         {
             if (UStaticMesh* CastleMesh = FindInstalledMesh({ TEXT("Gothic"), TEXT("Castle"), TEXT("Fortress"), TEXT("Wall"), TEXT("Arch") }))
             {
+                PrepareDungeonMeshForInstancing(CastleMesh);
                 PrimaryStructures->SetStaticMesh(CastleMesh);
             }
             if (UStaticMesh* PropMesh = FindInstalledMesh({ TEXT("Pillar"), TEXT("Statue"), TEXT("Gargoyle"), TEXT("Ruins"), TEXT("Gate") }))
             {
+                PrepareDungeonMeshForInstancing(PropMesh);
                 SecondaryStructures->SetStaticMesh(PropMesh);
             }
         }
@@ -147,17 +159,19 @@ void ANWDungeonSite::BuildDungeonGeometry()
         {
             if (UStaticMesh* CaveMesh = FindInstalledMesh({ TEXT("Cave"), TEXT("Rock"), TEXT("Boulder"), TEXT("Cliff") }))
             {
+                PrepareDungeonMeshForInstancing(CaveMesh);
                 PrimaryStructures->SetStaticMesh(CaveMesh);
             }
             if (UStaticMesh* CrystalMesh = FindInstalledMesh({ TEXT("Crystal"), TEXT("Stalag"), TEXT("Mushroom"), TEXT("CavePlant") }))
             {
+                PrepareDungeonMeshForInstancing(CrystalMesh);
                 SecondaryStructures->SetStaticMesh(CrystalMesh);
             }
         }
 
         NormalizeDungeonMesh(PrimaryStructures);
         NormalizeDungeonMesh(SecondaryStructures);
-        UE_LOG(LogTemp, Warning, TEXT("[DUNGEON-V7] %s usa meshes instalados normalizados | primary=%s | secondary=%s"),
+        UE_LOG(LogTemp, Warning, TEXT("[DUNGEON-V9] %s tema validado | primary=%s | secondary=%s"),
             *GetDungeonThemeName().ToString(),
             PrimaryStructures->GetStaticMesh() ? *PrimaryStructures->GetStaticMesh()->GetPathName() : TEXT("none"),
             SecondaryStructures->GetStaticMesh() ? *SecondaryStructures->GetStaticMesh()->GetPathName() : TEXT("none"));
@@ -166,7 +180,6 @@ void ANWDungeonSite::BuildDungeonGeometry()
     {
         PrimaryStructures->SetRelativeScale3D(FVector::OneVector);
         SecondaryStructures->SetRelativeScale3D(FVector::OneVector);
-        UE_LOG(LogTemp, Display, TEXT("[DUNGEON-VISUAL] modo seguro: geometria usa primitives autorados para escala previsivel."));
     }
 
     FRandomStream Random(DungeonSeed);
@@ -197,7 +210,6 @@ void ANWDungeonSite::BuildDarkCastle(FRandomStream& Random)
             else if (Side == 1) { Location = FVector(Along, -HalfExtent, 180.0f); Rotation = FRotator::ZeroRotator; }
             else if (Side == 2) { Location = FVector(HalfExtent, Along, 180.0f); Rotation = FRotator(0.0f, 90.0f, 0.0f); }
             else { Location = FVector(-HalfExtent, Along, 180.0f); Rotation = FRotator(0.0f, 90.0f, 0.0f); }
-
             PrimaryStructures->AddInstance(FTransform(Rotation, Location, FVector(3.0f, 0.55f, 3.6f)));
         }
     }
@@ -284,10 +296,7 @@ void ANWDungeonSite::SpawnDungeonPopulation()
 
 UStaticMesh* ANWDungeonSite::FindInstalledMesh(const TArray<FString>& Keywords) const
 {
-    if (!bUseInstalledDungeonMeshes)
-    {
-        return nullptr;
-    }
+    if (!bUseInstalledDungeonMeshes) { return nullptr; }
 
     IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
     FARFilter Filter;
@@ -306,10 +315,20 @@ UStaticMesh* ANWDungeonSite::FindInstalledMesh(const TArray<FString>& Keywords) 
         if (IsUnsafeDungeonAssetPath(Searchable)) { continue; }
 
         int32 Score = 0;
+        bool bThemeKeywordMatched = false;
         for (const FString& Keyword : Keywords)
         {
-            if (Searchable.Contains(Keyword, ESearchCase::IgnoreCase)) { Score += 12; }
+            if (Searchable.Contains(Keyword, ESearchCase::IgnoreCase))
+            {
+                Score += 18;
+                bThemeKeywordMatched = true;
+            }
         }
+
+        // Critical V9 fix: generic "Fab/Medieval" points can only rank an asset
+        // AFTER it matched the requested cave/castle/prop vocabulary. This prevents
+        // swords, shields and unrelated marketplace meshes from becoming cave walls.
+        if (!bThemeKeywordMatched) { continue; }
 
         if (Searchable.Contains(TEXT("Fab"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Megascans"), ESearchCase::IgnoreCase)) { Score += 12; }
         if (Searchable.Contains(TEXT("PBR"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Realistic"), ESearchCase::IgnoreCase)) { Score += 10; }
@@ -317,18 +336,18 @@ UStaticMesh* ANWDungeonSite::FindInstalledMesh(const TArray<FString>& Keywords) 
 
         if (DungeonType == ENWDungeonType::DarkCastle)
         {
-            if (Searchable.Contains(TEXT("Gothic"), ESearchCase::IgnoreCase)) { Score += 30; }
+            if (Searchable.Contains(TEXT("Gothic"), ESearchCase::IgnoreCase)) { Score += 35; }
             if (Searchable.Contains(TEXT("Wall"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Arch"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Pillar"), ESearchCase::IgnoreCase)) { Score += 18; }
             if (Searchable.Contains(TEXT("Castle"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Dark"), ESearchCase::IgnoreCase)) { Score += 8; }
         }
         else
         {
-            if (Searchable.Contains(TEXT("Soul"), ESearchCase::IgnoreCase) && Searchable.Contains(TEXT("Cave"), ESearchCase::IgnoreCase)) { Score += 34; }
-            if (Searchable.Contains(TEXT("Dungeon"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Cave"), ESearchCase::IgnoreCase)) { Score += 16; }
-            if (Searchable.Contains(TEXT("Rock"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Stalag"), ESearchCase::IgnoreCase)) { Score += 8; }
+            if (Searchable.Contains(TEXT("Soul"), ESearchCase::IgnoreCase) && Searchable.Contains(TEXT("Cave"), ESearchCase::IgnoreCase)) { Score += 45; }
+            if (Searchable.Contains(TEXT("Dungeon"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Cave"), ESearchCase::IgnoreCase)) { Score += 20; }
+            if (Searchable.Contains(TEXT("Rock"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Stalag"), ESearchCase::IgnoreCase)) { Score += 10; }
         }
 
-        if (Searchable.Contains(TEXT("KiteDemo"), ESearchCase::IgnoreCase)) { Score -= 15; }
+        if (Searchable.Contains(TEXT("KiteDemo"), ESearchCase::IgnoreCase)) { Score -= 20; }
         if (Score > BestScore)
         {
             BestScore = Score;
