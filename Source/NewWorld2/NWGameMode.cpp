@@ -13,11 +13,12 @@
 #include "NWEnemyAnimationDirector.h"
 #include "NWEnemyVisualDirector.h"
 #include "NWGameplaySafetyActor.h"
-#include "NWLightingSafetyActor.h"
 #include "NWPremiumEnvironmentDirector.h"
 #include "NWPremiumGameplayDirector.h"
+#include "NWPremiumSkyDirector.h"
 #include "NWPremiumVFXDirector.h"
 #include "NWProceduralWorldManager.h"
+#include "NWStartupWarmupDirector.h"
 #include "NWWorldEventDirector.h"
 #include "ProceduralMeshComponent.h"
 
@@ -69,7 +70,7 @@ namespace
         ReplaceActionMapping(Settings, TEXT("FastTravelConfirm"), { EKeys::Y });
         ReplaceActionMapping(Settings, TEXT("RegenerateWorld"), { EKeys::F10 });
 
-        UE_LOG(LogTemp, Display, TEXT("[INPUT] mappings V3 normalizados: Q/E/R, RMB, Shift, Crouch, 1/2, I; epoch somente F10."));
+        UE_LOG(LogTemp, Display, TEXT("[INPUT] mappings V4 normalizados: Q/E/R, RMB, Shift, Crouch, 1/2, I; epoch somente F10."));
     }
 
     template<typename TActorClass>
@@ -131,18 +132,24 @@ void ANWGameMode::StartPlay()
     if (World)
     {
         SpawnSingletonActor<ANWWorldEventDirector>(World, TEXT("WorldEventDirector"));
-        SpawnSingletonActor<ANWLightingSafetyActor>(World, TEXT("LightingSafetyActor"));
         SpawnSingletonActor<ANWGameplaySafetyActor>(World, TEXT("GameplaySafetyActor"));
 
-        // Premium V3: o presentation manager legado nao e mais inicializado. Player,
-        // ambiente, visual de mobs, animacao de mobs e VFX possuem donos separados.
+        // V4: um unico dono de sol/ceu evita que o LightingSafetyActor antigo
+        // reduza novamente a intensidade depois do premium sky.
+        SpawnSingletonActor<ANWPremiumSkyDirector>(World, TEXT("PremiumSkyDirector"));
+
+        // Loading gate entra antes dos sistemas visuais pesados. O DDC externo
+        // prepara assets antes do processo e este ator segura o gameplay enquanto
+        // a fila inicial de PSOs/streaming termina.
+        SpawnSingletonActor<ANWStartupWarmupDirector>(World, TEXT("StartupWarmupDirector"));
+
         SpawnSingletonActor<ANWPremiumEnvironmentDirector>(World, TEXT("PremiumEnvironmentDirector"));
         SpawnSingletonActor<ANWEnemyVisualDirector>(World, TEXT("EnemyVisualDirector"));
         SpawnSingletonActor<ANWEnemyAnimationDirector>(World, TEXT("EnemyAnimationDirector"));
         SpawnSingletonActor<ANWPremiumGameplayDirector>(World, TEXT("PremiumGameplayDirector"));
         SpawnSingletonActor<ANWPremiumVFXDirector>(World, TEXT("PremiumVFXDirector"));
 
-        UE_LOG(LogTemp, Warning, TEXT("[PREMIUM-V3] bootstrap completo: ambiente real + HP de mobs + animacao segura + free aim + VFX curado/preaquecido."));
+        UE_LOG(LogTemp, Warning, TEXT("[PREMIUM-V4] bootstrap: loading gate + sol/nuvens/shafts + HUD + mobs sem cloth + free aim + VFX."));
     }
 
     Super::StartPlay();
@@ -250,7 +257,7 @@ void ANWGameMode::SpawnPlaytestEncounter()
             static_cast<int32>(Entry.Archetype), *Location.ToCompactString(), Enemy->GetMaxHealth());
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[PLAYTEST] READY | encontro V3 novos=%d | existentes=%d | alvo=%d | mobs com HP bar + anti-one-shot"),
+    UE_LOG(LogTemp, Warning, TEXT("[PLAYTEST] READY | encontro V4 novos=%d | existentes=%d | alvo=%d | HP bar + anti-one-shot + cloth safety"),
         Spawned, NearbyRegularEnemies, DesiredNearbyEnemies);
 }
 
