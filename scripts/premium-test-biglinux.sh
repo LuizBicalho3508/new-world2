@@ -1,0 +1,222 @@
+#!/usr/bin/env bash
+set -Eeuo pipefail
+
+SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+PROJECT_FILE="$PROJECT_DIR/NewWorld2.uproject"
+UE_ROOT="${UE_ROOT:-$HOME/Aplicativos/UnrealEngine-5.8}"
+FPS_LIMIT=45
+RESOLUTION=""
+PROFILE=0
+MAX_PARALLEL=3
+LOG_FILE="$HOME/nw2-playable.log"
+
+usage() {
+    cat <<'EOF'
+Uso: premium-test-biglinux.sh [opcoes]
+  --ue-root PATH          Unreal Engine 5.8 Linux
+  --fps N                 limite de FPS (padrao 45)
+  --resolution LxA        ex.: 1600x900; se omitido detecta a tela
+  --profile               abre stat unit/game/gpu/fps
+  --max-parallel N        paralelismo do UBT (padrao 3)
+EOF
+}
+
+while (($#)); do
+    case "$1" in
+        --ue-root) UE_ROOT="$2"; shift 2 ;;
+        --fps) FPS_LIMIT="$2"; shift 2 ;;
+        --resolution) RESOLUTION="$2"; shift 2 ;;
+        --profile) PROFILE=1; shift ;;
+        --max-parallel) MAX_PARALLEL="$2"; shift 2 ;;
+        -h|--help) usage; exit 0 ;;
+        *) echo "Argumento desconhecido: $1" >&2; usage; exit 2 ;;
+    esac
+done
+
+fail() {
+    echo
+    echo "[FALHA] $*" >&2
+    echo "Log de runtime esperado em: $LOG_FILE" >&2
+    exit 1
+}
+
+[[ -f "$PROJECT_FILE" ]] || fail "NewWorld2.uproject nao encontrado em $PROJECT_DIR"
+[[ -x "$UE_ROOT/Engine/Binaries/Linux/UnrealEditor" ]] || fail "UnrealEditor nao encontrado em $UE_ROOT"
+[[ -x "$UE_ROOT/Engine/Build/BatchFiles/Linux/Build.sh" ]] || fail "Build.sh nao encontrado em $UE_ROOT"
+
+# Escolhe uma janela que caiba no desktop sem esconder o terminal. Em monitores
+# menores usa 1280x720; em Full HD/maiores usa 1600x900.
+if [[ -z "$RESOLUTION" ]]; then
+    SCREEN_MODE=""
+    if command -v xrandr >/dev/null 2>&1; then
+        SCREEN_MODE="$(xrandr --current 2>/dev/null | awk '/\*/ {print $1; exit}')"
+    fi
+    if [[ "$SCREEN_MODE" =~ ^([0-9]+)x([0-9]+)$ ]] && (( BASH_REMATCH[1] >= 1700 && BASH_REMATCH[2] >= 950 )); then
+        RESOLUTION="1600x900"
+    else
+        RESOLUTION="1280x720"
+    fi
+fi
+
+[[ "$RESOLUTION" =~ ^[0-9]+x[0-9]+$ ]] || fail "Resolucao invalida: $RESOLUTION"
+
+cd "$PROJECT_DIR"
+git config core.fileMode false || true
+
+CURRENT_COMMIT="$(git rev-parse --short=12 HEAD 2>/dev/null || echo sem-git)"
+CURRENT_BRANCH="$(git branch --show-current 2>/dev/null || echo sem-branch)"
+
+cat <<EOF
+============================================================
+ NEW WORLD 2 - PREMIUM VERTICAL SLICE / BIGLINUX
+============================================================
+Projeto    : $PROJECT_DIR
+Branch     : $CURRENT_BRANCH
+Commit     : $CURRENT_COMMIT
+UE         : $UE_ROOT
+Resolucao  : $RESOLUTION
+FPS        : $FPS_LIMIT
+UBT jobs   : $MAX_PARALLEL
+Profiler   : $([[ $PROFILE -eq 1 ]] && echo SIM || echo NAO)
+============================================================
+EOF
+
+# ---------------------------------------------------------------------------
+# PRE-FLIGHT DE CONTRATOS CRITICOS
+# ---------------------------------------------------------------------------
+echo
+echo "[1/6] Validando contratos de estabilidade..."
+
+required_files=(
+    "Source/NewWorld2/NWPremiumGameplayDirector.h"
+    "Source/NewWorld2/NWPremiumGameplayDirector.cpp"
+    "Source/NewWorld2/NWContentPresentationManager.cpp"
+    "Source/NewWorld2/NWWorldEventDirector.cpp"
+    "Source/NewWorld2/NWGameplaySafetyActor.cpp"
+    "scripts/play-biglinux.sh"
+    "scripts/check-playable-log.sh"
+)
+for file in "${required_files[@]}"; do
+    [[ -f "$PROJECT_DIR/$file" ]] || fail "arquivo premium ausente: $file"
+done
+
+grep -q 'ANWPremiumGameplayDirector' Source/NewWorld2/NWGameMode.cpp || fail "PremiumGameplayDirector nao esta ligado ao GameMode"
+grep -q 'bEnableDynamicPresentationAssets = false' Source/NewWorld2/NWWorldEventDirector.h || fail "apresentacao dinamica insegura voltou a ser default"
+grep -q 'bEnableNiagaraPresentation = false' Source/NewWorld2/NWContentPresentationManager.h || fail "Niagara automatico voltou a ser default"
+grep -q 'presentation manager unico ativo' Source/NewWorld2/NWGameMode.cpp || fail "dono visual unico nao confirmado"
+grep -q 'InvasionIntervalSeconds);' Source/NewWorld2/NWProceduralWorldManager.cpp || fail "primeira invasao ainda pode usar delay legado"
+
+echo "OK: contratos premium presentes."
+
+# ---------------------------------------------------------------------------
+# VALIDACAO UE / VULKAN
+# ---------------------------------------------------------------------------
+echo
+echo "[2/6] Validando Unreal Engine 5.8 e Vulkan..."
+python3 - "$UE_ROOT/Engine/Build/Build.version" <<'PY'
+import json, sys
+p=sys.argv[1]
+try:
+    v=json.load(open(p, encoding='utf-8'))
+    assert int(v.get('MajorVersion',0)) == 5 and int(v.get('MinorVersion',0)) == 8
+    print(f"UE {v.get('MajorVersion')}.{v.get('MinorVersion')}.{v.get('PatchVersion',0)} confirmada")
+except Exception as exc:
+    print(f"ERRO: Build.version nao e UE 5.8: {exc}", file=sys.stderr)
+    raise SystemExit(1)
+PY
+
+if command -v vulkaninfo >/dev/null 2>&1; then
+    vulkaninfo --summary >/tmp/nw2-premium-vulkan.txt 2>&1 || {
+        cat /tmp/nw2-premium-vulkan.txt >&2 || true
+        fail "Vulkan indisponivel"
+    }
+    grep -E 'deviceName|driverName|driverInfo|apiVersion' /tmp/nw2-premium-vulkan.txt | head -20 || true
+fi
+
+# ---------------------------------------------------------------------------
+# FECHAR APENAS INSTANCIA DESTE PROJETO
+# ---------------------------------------------------------------------------
+echo
+echo "[3/6] Garantindo runtime limpo..."
+if pgrep -af 'UnrealEditor.*NewWorld2' >/dev/null 2>&1; then
+    echo "Encerrando instancia anterior de NewWorld2..."
+    pkill -TERM -f 'UnrealEditor.*NewWorld2' 2>/dev/null || true
+    sleep 2
+fi
+
+# Nao apagamos DerivedDataCache/ShaderPipelineCache: a segunda execucao deve se
+# beneficiar do aquecimento da primeira. Limpamos somente logs temporarios antigos.
+mkdir -p "$PROJECT_DIR/Saved/Logs"
+find "$PROJECT_DIR/Saved/Logs" -maxdepth 1 -type f -name 'NewWorld2-backup-*.log' -mtime +7 -delete 2>/dev/null || true
+
+# ---------------------------------------------------------------------------
+# BUILD INCREMENTAL REAL
+# ---------------------------------------------------------------------------
+echo
+echo "[4/6] Compilando NewWorld2Editor..."
+BUILD_SH="$UE_ROOT/Engine/Build/BatchFiles/Linux/Build.sh"
+nice -n 5 "$BUILD_SH" NewWorld2Editor Linux Development "$PROJECT_FILE" \
+    -WaitMutex -NoHotReloadFromIDE "-MaxParallelActions=$MAX_PARALLEL"
+
+echo "OK: build concluido."
+
+# ---------------------------------------------------------------------------
+# EXECUCAO VIA LAUNCHER SEGURO
+# ---------------------------------------------------------------------------
+echo
+echo "[5/6] Abrindo o vertical slice premium..."
+PLAY_ARGS=(
+    --ue-root "$UE_ROOT"
+    --fps "$FPS_LIMIT"
+    --resolution "$RESOLUTION"
+    --max-parallel "$MAX_PARALLEL"
+)
+(( PROFILE )) && PLAY_ARGS+=(--profile)
+
+# play-biglinux.sh faz um Build.sh incremental adicional, que deve retornar muito
+# rapido como up-to-date. Mantemos essa validacao redundante de proposito: o launcher
+# continua seguro quando for usado isoladamente em outra sessao.
+set +e
+bash "$PROJECT_DIR/scripts/play-biglinux.sh" "${PLAY_ARGS[@]}"
+GAME_RC=$?
+set -e
+
+# ---------------------------------------------------------------------------
+# DIAGNOSTICO
+# ---------------------------------------------------------------------------
+echo
+echo "[6/6] Analisando o log..."
+CHECK_RC=0
+if [[ -f "$LOG_FILE" ]]; then
+    bash "$PROJECT_DIR/scripts/check-playable-log.sh" "$LOG_FILE" || CHECK_RC=$?
+else
+    echo "[ATENCAO] Log nao encontrado: $LOG_FILE"
+    CHECK_RC=2
+fi
+
+echo
+cat <<EOF
+============================================================
+ RESULTADO DO PREMIUM PLAYTEST
+============================================================
+Game exit code : $GAME_RC
+Diagnostico    : $CHECK_RC
+Log            : $LOG_FILE
+Commit         : $CURRENT_COMMIT
+============================================================
+EOF
+
+if (( GAME_RC != 0 )); then
+    echo
+    echo "Ultimas 220 linhas do log:"
+    tail -n 220 "$LOG_FILE" 2>/dev/null || true
+    exit "$GAME_RC"
+fi
+
+# O jogador normalmente fecha a janela manualmente e o runtime devolve 0. Avisos
+# do checker nao impedem um novo teste, mas ficam destacados para a proxima rodada.
+if (( CHECK_RC >= 2 )); then
+    exit "$CHECK_RC"
+fi
+exit 0
