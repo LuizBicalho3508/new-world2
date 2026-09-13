@@ -19,28 +19,41 @@ ANWPremiumEnvironmentDirector::ANWPremiumEnvironmentDirector()
     SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
     SetRootComponent(SceneRoot);
 
-    auto ConfigureNatureComponent = [this](const TCHAR* Name, bool bCollision)
-    {
-        UHierarchicalInstancedStaticMeshComponent* Component = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(Name);
-        Component->SetupAttachment(SceneRoot);
-        Component->SetCollisionEnabled(bCollision ? ECollisionEnabled::QueryAndPhysics : ECollisionEnabled::NoCollision);
-        if (bCollision)
-        {
-            Component->SetCollisionProfileName(TEXT("BlockAll"));
-        }
-        Component->SetGenerateOverlapEvents(false);
-        Component->SetCanEverAffectNavigation(bCollision);
-        Component->SetCullDistances(900, 14500);
-        return Component;
+    TreesPrimary = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("PremiumTreesPrimary"));
+    TreesSecondary = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("PremiumTreesSecondary"));
+    GroundCover = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("PremiumGroundCover"));
+    Bushes = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("PremiumBushes"));
+    RocksPrimary = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("PremiumRocksPrimary"));
+    RocksSecondary = CreateDefaultSubobject<UHierarchicalInstancedStaticMeshComponent>(TEXT("PremiumRocksSecondary"));
+
+    UHierarchicalInstancedStaticMeshComponent* Components[] = {
+        TreesPrimary, TreesSecondary, GroundCover, Bushes, RocksPrimary, RocksSecondary
     };
+    for (UHierarchicalInstancedStaticMeshComponent* Component : Components)
+    {
+        Component->SetupAttachment(SceneRoot);
+        Component->SetGenerateOverlapEvents(false);
+        Component->SetCastShadow(true);
+        Component->SetCullDistances(900, 14500);
+    }
 
-    TreesPrimary = ConfigureNatureComponent(TEXT("PremiumTreesPrimary"), true);
-    TreesSecondary = ConfigureNatureComponent(TEXT("PremiumTreesSecondary"), true);
-    GroundCover = ConfigureNatureComponent(TEXT("PremiumGroundCover"), false);
-    Bushes = ConfigureNatureComponent(TEXT("PremiumBushes"), false);
-    RocksPrimary = ConfigureNatureComponent(TEXT("PremiumRocksPrimary"), true);
-    RocksSecondary = ConfigureNatureComponent(TEXT("PremiumRocksSecondary"), true);
+    TreesPrimary->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    TreesSecondary->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    RocksPrimary->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    RocksSecondary->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    TreesPrimary->SetCollisionProfileName(TEXT("BlockAll"));
+    TreesSecondary->SetCollisionProfileName(TEXT("BlockAll"));
+    RocksPrimary->SetCollisionProfileName(TEXT("BlockAll"));
+    RocksSecondary->SetCollisionProfileName(TEXT("BlockAll"));
+    TreesPrimary->SetCanEverAffectNavigation(true);
+    TreesSecondary->SetCanEverAffectNavigation(true);
+    RocksPrimary->SetCanEverAffectNavigation(true);
+    RocksSecondary->SetCanEverAffectNavigation(true);
 
+    GroundCover->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    Bushes->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    GroundCover->SetCanEverAffectNavigation(false);
+    Bushes->SetCanEverAffectNavigation(false);
     GroundCover->SetCullDistances(500, 6500);
     Bushes->SetCullDistances(700, 8500);
     RocksPrimary->SetCullDistances(800, 13000);
@@ -97,8 +110,8 @@ void ANWPremiumEnvironmentDirector::HideLegacyPrototypeDecor(ANWProceduralWorldM
     if (!WorldManager) { return; }
 
     static const TSet<FName> LegacyNames = {
-        TEXT("TreeTrunks"), TEXT("TreeCrowns"), TEXT("Bushes"), TEXT("Rocks"),
-        TEXT("Crystals"), TEXT("Buildings"), TEXT("Structures")
+        FName(TEXT("TreeTrunks")), FName(TEXT("TreeCrowns")), FName(TEXT("Bushes")), FName(TEXT("Rocks")),
+        FName(TEXT("Crystals")), FName(TEXT("Buildings")), FName(TEXT("Structures"))
     };
 
     TArray<UHierarchicalInstancedStaticMeshComponent*> Components;
@@ -289,7 +302,7 @@ UStaticMesh* ANWPremiumEnvironmentDirector::FindBestNatureMesh(
 
     for (const FAssetData& Asset : StaticMeshAssets)
     {
-        const FString AssetPath = Asset.GetObjectPathString();
+        const FString AssetPath = Asset.PackageName.ToString() + TEXT(".") + Asset.AssetName.ToString();
         if (!ExcludedPath.IsEmpty() && AssetPath == ExcludedPath) { continue; }
 
         const int32 Score = ScoreNatureAsset(Asset, PrimaryKeywords, PreferredKeywords);
