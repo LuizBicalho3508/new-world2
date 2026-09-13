@@ -1,9 +1,11 @@
 #include "NWGameMode.h"
 
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
 #include "Kismet/GameplayStatics.h"
+#include "Modules/ModuleManager.h"
 #include "NWCharacter.h"
 #include "NWContentPresentationManager.h"
 #include "NWFabExpansionPresentationManager.h"
@@ -20,6 +22,17 @@ ANWGameMode::ANWGameMode()
 
 void ANWGameMode::StartPlay()
 {
+    // O modo -game pode chegar aqui enquanto o Asset Registry ainda esta indexando
+    // milhares de arquivos adicionados pelo Fab. Fazemos uma varredura sincrona uma
+    // unica vez ANTES de criar o mundo e os presentation managers. Assim os 6k+
+    // assets instalados realmente entram nos catalogos em vez de aparecer Static=0.
+    {
+        IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+        const TArray<FString> PathsToScan = { TEXT("/Game") };
+        Registry.ScanPathsSynchronous(PathsToScan, true);
+        UE_LOG(LogTemp, Display, TEXT("[BOOT] Asset Registry /Game sincronizado antes do play."));
+    }
+
     EnsureWorldManager();
 
     if (GetWorld())
@@ -119,6 +132,7 @@ ANWProceduralWorldManager* ANWGameMode::EnsureWorldManager()
             Terrain->bUseComplexAsSimpleCollision = true;
             Terrain->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
             Terrain->SetCollisionProfileName(TEXT("BlockAll"));
+            Terrain->RecreatePhysicsState();
         }
         return WorldManager;
     }
