@@ -6,8 +6,10 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
+#include "Engine/StaticMesh.h"
 #include "EngineUtils.h"
 #include "Modules/ModuleManager.h"
+#include "NWCharacter.h"
 #include "NWEnemy.h"
 
 ANWEnemyVisualDirector::ANWEnemyVisualDirector()
@@ -23,6 +25,7 @@ void ANWEnemyVisualDirector::BeginPlay()
     if (GetNetMode() == NM_DedicatedServer) { return; }
     ScanAssets();
     RefreshEnemyVisuals();
+    StabilizePlayerWeaponVisuals();
 }
 
 void ANWEnemyVisualDirector::Tick(float DeltaSeconds)
@@ -30,6 +33,7 @@ void ANWEnemyVisualDirector::Tick(float DeltaSeconds)
     Super::Tick(DeltaSeconds);
     if (GetNetMode() == NM_DedicatedServer) { return; }
     RefreshEnemyVisuals();
+    StabilizePlayerWeaponVisuals();
 }
 
 void ANWEnemyVisualDirector::ScanAssets()
@@ -73,6 +77,57 @@ void ANWEnemyVisualDirector::RefreshEnemyVisuals()
     for (auto It = AppliedSignatures.CreateIterator(); It; ++It)
     {
         if (!It.Key().IsValid()) { It.RemoveCurrent(); }
+    }
+}
+
+void ANWEnemyVisualDirector::StabilizePlayerWeaponVisuals()
+{
+    if (!GetWorld()) { return; }
+
+    for (TActorIterator<ANWCharacter> It(GetWorld()); It; ++It)
+    {
+        ANWCharacter* Character = *It;
+        if (!IsValid(Character) || !Character->GetMesh()) { continue; }
+
+        const USkeletalMesh* PlayerMesh = Character->GetMesh()->GetSkeletalMeshAsset();
+        const FString PlayerMeshPath = PlayerMesh ? PlayerMesh->GetPathName() : FString();
+        const bool bGreystoneRig = PlayerMeshPath.Contains(TEXT("ParagonGreystone"), ESearchCase::IgnoreCase);
+
+        TArray<UStaticMeshComponent*> Components;
+        Character->GetComponents<UStaticMeshComponent>(Components);
+        int32 Hidden = 0;
+        for (UStaticMeshComponent* Component : Components)
+        {
+            if (!Component) { continue; }
+            const FString ComponentName = Component->GetName();
+            if (!ComponentName.Contains(TEXT("NW_WeaponVisual"), ESearchCase::IgnoreCase)) { continue; }
+
+            const UStaticMesh* WeaponMesh = Component->GetStaticMesh();
+            const FString WeaponPath = WeaponMesh ? WeaponMesh->GetPathName() : FString();
+            const bool bEnginePrimitive = WeaponPath.Contains(TEXT("/Engine/BasicShapes/"), ESearchCase::IgnoreCase);
+
+            // O Greystone usado neste vertical slice ja possui arma integrada ao visual/rig.
+            // Acrescentar outra espada sobre a mao produz a duplicacao vista no playtest.
+            // Para outros personagens, apenas placeholders de BasicShapes sao ocultados.
+            if (bGreystoneRig || bEnginePrimitive)
+            {
+                Component->SetVisibility(false, true);
+                Component->SetHiddenInGame(true, true);
+                ++Hidden;
+            }
+        }
+
+        if (Hidden > 0 && !LoggedWeaponSafetyCharacters.Contains(Character))
+        {
+            LoggedWeaponSafetyCharacters.Add(Character);
+            UE_LOG(LogTemp, Warning, TEXT("[WEAPON-VISUAL] %s: %d visual(is) externo(s) duplicado/placeholder ocultado(s); gameplay da arma permanece ativo."),
+                *Character->GetName(), Hidden);
+        }
+    }
+
+    for (auto It = LoggedWeaponSafetyCharacters.CreateIterator(); It; ++It)
+    {
+        if (!It->IsValid()) { It.RemoveCurrent(); }
     }
 }
 
