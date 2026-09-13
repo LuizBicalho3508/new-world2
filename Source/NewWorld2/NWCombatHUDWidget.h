@@ -47,6 +47,9 @@ private:
     TObjectPtr<UTextBlock> WeaponText;
 
     UPROPERTY(Transient)
+    TObjectPtr<UTextBlock> StatsText;
+
+    UPROPERTY(Transient)
     TObjectPtr<UTextBlock> StateText;
 
     UPROPERTY(Transient)
