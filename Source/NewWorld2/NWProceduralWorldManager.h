@@ -35,6 +35,9 @@ public:
     float GetTerrainHeightAt(float X, float Y) const;
 
     UFUNCTION(BlueprintPure, Category="World")
+    float GetTerrainHalfExtent() const { return TerrainResolution * TerrainCellSize * 0.5f; }
+
+    UFUNCTION(BlueprintPure, Category="World")
     int32 GetWorldEpoch() const { return WorldEpoch; }
 
 protected:
@@ -124,10 +127,12 @@ protected:
     int32 InvasionWaveSizePerSettlement = 6;
 
     UPROPERTY(EditDefaultsOnly, Category="Settlements", meta=(ClampMin="15.0"))
-    float InvasionIntervalSeconds = 75.0f;
+    int32 InvasionIntervalSeconds = 75.0f;
 
-    UPROPERTY(EditDefaultsOnly, Category="Evolution", meta=(ClampMin="30.0"))
-    float EvolutionIntervalSeconds = 180.0f;
+    // Desligado por padrao no playtest. Regeneracao manual fica em F10 para nao
+    // reconstruir o piso sob o jogador enquanto testamos locomocao/combate.
+    UPROPERTY(EditDefaultsOnly, Category="Evolution", meta=(ClampMin="0.0"))
+    float EvolutionIntervalSeconds = 0.0f;
 
     UPROPERTY(ReplicatedUsing=OnRep_WorldEpoch, VisibleAnywhere, Category="Evolution")
     int32 WorldEpoch = 1;
