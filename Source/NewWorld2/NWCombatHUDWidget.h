@@ -43,6 +43,7 @@ private:
     UPROPERTY(Transient) TObjectPtr<UTextBlock> WeaponText;
     UPROPERTY(Transient) TObjectPtr<UTextBlock> StatsText;
     UPROPERTY(Transient) TObjectPtr<UTextBlock> StateText;
+    UPROPERTY(Transient) TArray<TObjectPtr<UTextBlock>> AbilityIconTexts;
     UPROPERTY(Transient) TArray<TObjectPtr<UTextBlock>> AbilityTexts;
     UPROPERTY(Transient) TArray<TObjectPtr<UTextBlock>> AbilityDescriptionTexts;
     UPROPERTY(Transient) TArray<TObjectPtr<UBorder>> AbilityCards;

@@ -64,7 +64,7 @@ void ANWPlayerEquipmentVisualDirector::ScanAssets()
     SkeletalFilter.bRecursivePaths = true;
     Registry.GetAssets(SkeletalFilter, SkeletalAssets);
 
-    UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V6] catalogo seguro: static=%d skeletal=%d | sem Engine BasicShapes/cloth/skins."),
+    UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V7] catalogo: static=%d skeletal=%d | modular compatível primeiro, StaticMesh por bone como fallback."),
         StaticAssets.Num(), SkeletalAssets.Num());
 }
 
@@ -107,11 +107,11 @@ void ANWPlayerEquipmentVisualDirector::UpdatePlayer(ANWCharacter* Character, FPl
         if (USkeletalMesh* BaseBody = FindBaseBodyMesh(Character))
         {
             Character->GetMesh()->SetSkeletalMeshAsset(BaseBody);
-            UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V6] corpo-base/underlayer compativel ativado: %s"), *BaseBody->GetPathName());
+            UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V7] corpo-base/underlayer compativel ativado: %s"), *BaseBody->GetPathName());
         }
         else
         {
-            UE_LOG(LogTemp, Display, TEXT("[PLAYER-GEAR-V6] nenhum corpo-base compativel sem cloth instalado; mantendo mesh base seguro sem overlays extras."));
+            UE_LOG(LogTemp, Display, TEXT("[PLAYER-GEAR-V7] mantendo corpo-base atual; nenhuma underlayer compativel instalada."));
         }
     }
 
@@ -120,8 +120,8 @@ void ANWPlayerEquipmentVisualDirector::UpdatePlayer(ANWCharacter* Character, FPl
 
 void ANWPlayerEquipmentVisualDirector::UpdateWeapon(ANWCharacter* Character, FPlayerGearState& State)
 {
-    UStaticMeshComponent* Right = EnsureWeaponComponent(Character, State.RightWeapon, TEXT("NWV6_Weapon_R"));
-    UStaticMeshComponent* Left = EnsureWeaponComponent(Character, State.LeftWeapon, TEXT("NWV6_Weapon_L"));
+    UStaticMeshComponent* Right = EnsureWeaponComponent(Character, State.RightWeapon, TEXT("NWV7_Weapon_R"));
+    UStaticMeshComponent* Left = EnsureWeaponComponent(Character, State.LeftWeapon, TEXT("NWV7_Weapon_L"));
     if (!Right || !Left) { return; }
 
     Right->SetVisibility(false, true);
@@ -132,7 +132,7 @@ void ANWPlayerEquipmentVisualDirector::UpdateWeapon(ANWCharacter* Character, FPl
     const ENWWeaponType Type = Character->GetActiveWeapon();
     if (!Character->HasEquippedWeaponItem(Type))
     {
-        UE_LOG(LogTemp, Display, TEXT("[PLAYER-GEAR-V6] %s sem item de arma equipado: maos visuais livres."), *Character->GetName());
+        UE_LOG(LogTemp, Display, TEXT("[PLAYER-GEAR-V7] %s sem item de arma equipado: maos visuais livres."), *Character->GetName());
         return;
     }
 
@@ -140,7 +140,7 @@ void ANWPlayerEquipmentVisualDirector::UpdateWeapon(ANWCharacter* Character, FPl
     UStaticMesh* WeaponMesh = FindWeaponMesh(Type, Style);
     if (!WeaponMesh)
     {
-        UE_LOG(LogTemp, Display, TEXT("[PLAYER-GEAR-V6] nenhum mesh realista instalado para %s/%s; nao sera usado primitive fallback."),
+        UE_LOG(LogTemp, Display, TEXT("[PLAYER-GEAR-V7] nenhum mesh realista instalado para %s/%s."),
             *NWCombat::WeaponTypeToString(Type), *Style.ToString());
         return;
     }
@@ -148,7 +148,7 @@ void ANWPlayerEquipmentVisualDirector::UpdateWeapon(ANWCharacter* Character, FPl
     auto Configure = [&](UStaticMeshComponent* Component, bool bRight, UStaticMesh* Mesh)
     {
         const FName Socket = FindHandSocket(Character, bRight);
-        if (Socket.IsNone()) { return; }
+        if (Socket.IsNone() || !Mesh) { return; }
         Component->AttachToComponent(Character->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket);
         Component->SetStaticMesh(Mesh);
         Component->SetRelativeLocation(FVector::ZeroVector);
@@ -167,7 +167,7 @@ void ANWPlayerEquipmentVisualDirector::UpdateWeapon(ANWCharacter* Character, FPl
         if (UStaticMesh* Shield = FindShieldMesh(Style)) { Configure(Left, false, Shield); }
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V6] arma equipada visivel: %s -> %s"),
+    UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V7] arma equipada visivel: %s -> %s"),
         *NWCombat::WeaponTypeToString(Type), *WeaponMesh->GetPathName());
 }
 
@@ -180,27 +180,54 @@ void ANWPlayerEquipmentVisualDirector::UpdateArmor(ANWCharacter* Character, FPla
         const uint8 Key = static_cast<uint8>(Item.Slot);
         ActiveSlots.Add(Key);
 
-        USkeletalMeshComponent* Part = EnsureArmorComponent(Character, State, Item.Slot);
-        if (!Part) { continue; }
+        USkeletalMeshComponent* SkeletalPart = EnsureArmorComponent(Character, State, Item.Slot);
+        UStaticMeshComponent* StaticPart = EnsureStaticArmorComponent(Character, State, Item.Slot);
+        if (SkeletalPart) { SkeletalPart->SetVisibility(false, true); }
+        if (StaticPart) { StaticPart->SetVisibility(false, true); StaticPart->SetStaticMesh(nullptr); }
 
-        USkeletalMesh* Mesh = FindArmorMesh(Character, Item);
-        if (!Mesh)
+        if (USkeletalMesh* Mesh = FindArmorMesh(Character, Item))
         {
-            Part->SetVisibility(false, true);
-            UE_LOG(LogTemp, Display, TEXT("[PLAYER-GEAR-V6] %s sem modular compativel para o Skeleton atual; gameplay/equip permanece valido."), *Item.Name);
+            if (!SkeletalPart) { continue; }
+            SkeletalPart->SetSkeletalMeshAsset(Mesh);
+            SkeletalPart->SetLeaderPoseComponent(Character->GetMesh(), false, false);
+            SkeletalPart->SetRelativeTransform(FTransform::Identity);
+            SkeletalPart->SetVisibility(true, true);
+            UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V7] armadura modular visivel: %s -> %s"), *Item.Name, *Mesh->GetPathName());
             continue;
         }
 
-        Part->SetSkeletalMeshAsset(Mesh);
-        Part->SetLeaderPoseComponent(Character->GetMesh(), false, false);
-        Part->SetRelativeTransform(FTransform::Identity);
-        Part->SetVisibility(true, true);
-        UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V6] armadura visivel: %s -> %s"), *Item.Name, *Mesh->GetPathName());
+        if (UStaticMesh* StaticMesh = FindStaticArmorMesh(Item))
+        {
+            if (!StaticPart) { continue; }
+            const FName AttachPoint = FindArmorAttachPoint(Character, Item.Slot);
+            if (AttachPoint.IsNone())
+            {
+                UE_LOG(LogTemp, Display, TEXT("[PLAYER-GEAR-V7] %s encontrou mesh, mas rig nao possui bone/socket de ancoragem."), *Item.Name);
+                continue;
+            }
+            StaticPart->AttachToComponent(Character->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, AttachPoint);
+            StaticPart->SetStaticMesh(StaticMesh);
+            StaticPart->SetRelativeTransform(GetStaticArmorRelativeTransform(Item.Slot, StaticMesh));
+            StaticPart->SetVisibility(true, true);
+            UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V7] armadura StaticMesh visivel: %s -> %s @ %s"),
+                *Item.Name, *StaticMesh->GetPathName(), *AttachPoint.ToString());
+            continue;
+        }
+
+        UE_LOG(LogTemp, Display, TEXT("[PLAYER-GEAR-V7] %s sem visual compatível instalado; item continua valido no gameplay."), *Item.Name);
     }
 
     for (auto& Pair : State.ArmorParts)
     {
         if (!ActiveSlots.Contains(Pair.Key) && Pair.Value.IsValid()) { Pair.Value->SetVisibility(false, true); }
+    }
+    for (auto& Pair : State.StaticArmorParts)
+    {
+        if (!ActiveSlots.Contains(Pair.Key) && Pair.Value.IsValid())
+        {
+            Pair.Value->SetVisibility(false, true);
+            Pair.Value->SetStaticMesh(nullptr);
+        }
     }
 }
 
@@ -228,12 +255,13 @@ UStaticMesh* ANWPlayerEquipmentVisualDirector::FindWeaponMesh(ENWWeaponType Type
 
         bool bMatch = false;
         int32 Score = 0;
-        for (const FString& K : Keywords) if (Search.Contains(K)) { bMatch = true; Score += 40; }
+        for (const FString& K : Keywords) if (Search.Contains(K)) { bMatch = true; Score += 44; }
         if (!bMatch) { continue; }
-        if (!StyleId.IsNone() && Search.Contains(StyleId.ToString().ToLower())) { Score += 90; }
-        if (Search.Contains(TEXT("fab")) || Search.Contains(TEXT("realistic"))) { Score += 55; }
-        if (Search.Contains(TEXT("medieval")) || Search.Contains(TEXT("pbr"))) { Score += 35; }
-        if (Search.Contains(TEXT("classic_medieval"))) { Score += 70; }
+        if (!StyleId.IsNone() && Search.Contains(StyleId.ToString().ToLower())) { Score += 95; }
+        if (Search.Contains(TEXT("fab")) || Search.Contains(TEXT("realistic"))) { Score += 65; }
+        if (Search.Contains(TEXT("medieval")) || Search.Contains(TEXT("pbr")) || Search.Contains(TEXT("game_ready")) || Search.Contains(TEXT("gameready"))) { Score += 40; }
+        if (Search.Contains(TEXT("classic_medieval")) || Search.Contains(TEXT("dark_knight")) || Search.Contains(TEXT("thornblade")) || Search.Contains(TEXT("ethereal"))) { Score += 75; }
+        if (Search.Contains(TEXT("sample")) && !Search.Contains(TEXT("weapon"))) { Score -= 20; }
         if (Score <= BestScore) { continue; }
         if (UStaticMesh* Mesh = Cast<UStaticMesh>(Asset.GetAsset())) { BestScore = Score; Best = Mesh; }
     }
@@ -250,7 +278,7 @@ UStaticMesh* ANWPlayerEquipmentVisualDirector::FindShieldMesh(FName StyleId) con
         if (IsUnsafePath(Search) || (!Search.Contains(TEXT("shield")) && !Search.Contains(TEXT("aegis")))) { continue; }
         int32 Score = 40;
         if (!StyleId.IsNone() && Search.Contains(StyleId.ToString().ToLower())) { Score += 80; }
-        if (Search.Contains(TEXT("realistic")) || Search.Contains(TEXT("medieval")) || Search.Contains(TEXT("fab"))) { Score += 45; }
+        if (Search.Contains(TEXT("realistic")) || Search.Contains(TEXT("medieval")) || Search.Contains(TEXT("fab")) || Search.Contains(TEXT("viking"))) { Score += 50; }
         if (Score <= BestScore) { continue; }
         if (UStaticMesh* Mesh = Cast<UStaticMesh>(Asset.GetAsset())) { BestScore = Score; Best = Mesh; }
     }
@@ -269,8 +297,8 @@ USkeletalMesh* ANWPlayerEquipmentVisualDirector::FindArmorMesh(ANWCharacter* Cha
         case ENWEquipmentSlot::Head: Keywords = { TEXT("helmet"), TEXT("helm"), TEXT("head") }; break;
         case ENWEquipmentSlot::Chest: Keywords = { TEXT("chest"), TEXT("torso"), TEXT("body"), TEXT("cuirass") }; break;
         case ENWEquipmentSlot::Gloves: Keywords = { TEXT("glove"), TEXT("gauntlet"), TEXT("hand") }; break;
-        case ENWEquipmentSlot::Legs: Keywords = { TEXT("legs"), TEXT("pants"), TEXT("trouser") }; break;
-        case ENWEquipmentSlot::Boots: Keywords = { TEXT("boots"), TEXT("foot"), TEXT("greave") }; break;
+        case ENWEquipmentSlot::Legs: Keywords = { TEXT("legs"), TEXT("pants"), TEXT("trouser"), TEXT("greave") }; break;
+        case ENWEquipmentSlot::Boots: Keywords = { TEXT("boots"), TEXT("foot"), TEXT("shoe") }; break;
         default: break;
     }
 
@@ -293,6 +321,42 @@ USkeletalMesh* ANWPlayerEquipmentVisualDirector::FindArmorMesh(ANWCharacter* Cha
         if (!Mesh || Mesh->GetSkeleton() != Skeleton || Mesh->HasActiveClothingAssets()) { continue; }
         BestScore = Score;
         Best = Mesh;
+    }
+    return Best;
+}
+
+UStaticMesh* ANWPlayerEquipmentVisualDirector::FindStaticArmorMesh(const FNWGeneratedItem& Item) const
+{
+    TArray<FString> Keywords;
+    switch (Item.Slot)
+    {
+        case ENWEquipmentSlot::Head: Keywords = { TEXT("helmet"), TEXT("helm"), TEXT("headgear") }; break;
+        case ENWEquipmentSlot::Chest: Keywords = { TEXT("chest"), TEXT("cuirass"), TEXT("breastplate"), TEXT("armor_body"), TEXT("armour_body") }; break;
+        case ENWEquipmentSlot::Gloves: Keywords = { TEXT("glove"), TEXT("gauntlet") }; break;
+        case ENWEquipmentSlot::Legs: Keywords = { TEXT("greave"), TEXT("leg_armor"), TEXT("legarmor"), TEXT("pants") }; break;
+        case ENWEquipmentSlot::Boots: Keywords = { TEXT("boot"), TEXT("sabat"), TEXT("foot_armor"), TEXT("footarmor") }; break;
+        default: break;
+    }
+
+    int32 BestScore = TNumericLimits<int32>::Lowest();
+    UStaticMesh* Best = nullptr;
+    for (const FAssetData& Asset : StaticAssets)
+    {
+        const FString Search = (Asset.PackageName.ToString() + TEXT("/") + Asset.AssetName.ToString()).ToLower();
+        if (IsUnsafePath(Search) || Search.Contains(TEXT("weapon")) || Search.Contains(TEXT("shield")) || Search.Contains(TEXT("sword")) || Search.Contains(TEXT("axe"))) { continue; }
+        bool bMatch = false;
+        int32 Score = 0;
+        for (const FString& K : Keywords)
+        {
+            if (Search.Contains(K)) { bMatch = true; Score += 52; }
+        }
+        if (!bMatch) { continue; }
+        if (!Item.StyleId.IsNone() && Search.Contains(Item.StyleId.ToString().ToLower())) { Score += 100; }
+        if (Search.Contains(TEXT("armor")) || Search.Contains(TEXT("armour")) || Search.Contains(TEXT("knight"))) { Score += 45; }
+        if (Search.Contains(TEXT("realistic")) || Search.Contains(TEXT("pbr")) || Search.Contains(TEXT("medieval")) || Search.Contains(TEXT("fab"))) { Score += 42; }
+        if (Search.Contains(TEXT("statue")) || Search.Contains(TEXT("pedestal")) || Search.Contains(TEXT("environment"))) { Score -= 300; }
+        if (Score <= BestScore) { continue; }
+        if (UStaticMesh* Mesh = Cast<UStaticMesh>(Asset.GetAsset())) { BestScore = Score; Best = Mesh; }
     }
     return Best;
 }
@@ -343,7 +407,7 @@ USkeletalMeshComponent* ANWPlayerEquipmentVisualDirector::EnsureArmorComponent(A
     {
         if (Existing->IsValid()) { return Existing->Get(); }
     }
-    const FName Name(*FString::Printf(TEXT("NWV6_Armor_%d"), static_cast<int32>(Slot)));
+    const FName Name(*FString::Printf(TEXT("NWV7_ArmorSkeletal_%d"), static_cast<int32>(Slot)));
     USkeletalMeshComponent* Component = NewObject<USkeletalMeshComponent>(Character, MakeUniqueObjectName(Character, USkeletalMeshComponent::StaticClass(), Name), RF_Transient);
     if (!Component) { return nullptr; }
     Character->AddInstanceComponent(Component);
@@ -357,14 +421,76 @@ USkeletalMeshComponent* ANWPlayerEquipmentVisualDirector::EnsureArmorComponent(A
     return Component;
 }
 
+UStaticMeshComponent* ANWPlayerEquipmentVisualDirector::EnsureStaticArmorComponent(ANWCharacter* Character, FPlayerGearState& State, ENWEquipmentSlot Slot) const
+{
+    const uint8 Key = static_cast<uint8>(Slot);
+    if (TWeakObjectPtr<UStaticMeshComponent>* Existing = State.StaticArmorParts.Find(Key))
+    {
+        if (Existing->IsValid()) { return Existing->Get(); }
+    }
+    const FName Name(*FString::Printf(TEXT("NWV7_ArmorStatic_%d"), static_cast<int32>(Slot)));
+    UStaticMeshComponent* Component = NewObject<UStaticMeshComponent>(Character, MakeUniqueObjectName(Character, UStaticMeshComponent::StaticClass(), Name), RF_Transient);
+    if (!Component) { return nullptr; }
+    Character->AddInstanceComponent(Component);
+    Component->SetupAttachment(Character->GetMesh());
+    Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
+    Component->SetGenerateOverlapEvents(false);
+    Component->SetCastShadow(true);
+    Component->SetVisibility(false, true);
+    Component->RegisterComponent();
+    State.StaticArmorParts.Add(Key, Component);
+    return Component;
+}
+
 FName ANWPlayerEquipmentVisualDirector::FindHandSocket(ANWCharacter* Character, bool bRight) const
 {
     if (!Character || !Character->GetMesh()) { return NAME_None; }
     const TArray<FName> Candidates = bRight
         ? TArray<FName>{ TEXT("weapon_r"), TEXT("WeaponSocket"), TEXT("weapon_socket_r"), TEXT("RightHand"), TEXT("hand_r") }
         : TArray<FName>{ TEXT("weapon_l"), TEXT("ShieldSocket"), TEXT("weapon_socket_l"), TEXT("LeftHand"), TEXT("hand_l") };
-    for (FName Candidate : Candidates) if (Character->GetMesh()->DoesSocketExist(Candidate)) { return Candidate; }
+    for (FName Candidate : Candidates)
+    {
+        if (Character->GetMesh()->DoesSocketExist(Candidate) || Character->GetMesh()->GetBoneIndex(Candidate) != INDEX_NONE) { return Candidate; }
+    }
     return NAME_None;
+}
+
+FName ANWPlayerEquipmentVisualDirector::FindArmorAttachPoint(ANWCharacter* Character, ENWEquipmentSlot Slot) const
+{
+    if (!Character || !Character->GetMesh()) { return NAME_None; }
+    TArray<FName> Candidates;
+    switch (Slot)
+    {
+        case ENWEquipmentSlot::Head: Candidates = { TEXT("head"), TEXT("Head"), TEXT("neck_01") }; break;
+        case ENWEquipmentSlot::Chest: Candidates = { TEXT("spine_03"), TEXT("spine_02"), TEXT("spine_01"), TEXT("chest") }; break;
+        case ENWEquipmentSlot::Gloves: Candidates = { TEXT("hand_r"), TEXT("RightHand"), TEXT("lowerarm_r") }; break;
+        case ENWEquipmentSlot::Legs: Candidates = { TEXT("pelvis"), TEXT("Pelvis"), TEXT("thigh_r") }; break;
+        case ENWEquipmentSlot::Boots: Candidates = { TEXT("foot_r"), TEXT("Foot_R"), TEXT("calf_r") }; break;
+        default: break;
+    }
+    for (FName Candidate : Candidates)
+    {
+        if (Character->GetMesh()->DoesSocketExist(Candidate) || Character->GetMesh()->GetBoneIndex(Candidate) != INDEX_NONE) { return Candidate; }
+    }
+    return NAME_None;
+}
+
+FTransform ANWPlayerEquipmentVisualDirector::GetStaticArmorRelativeTransform(ENWEquipmentSlot Slot, UStaticMesh* Mesh) const
+{
+    float TargetDimension = 55.0f;
+    FVector Location = FVector::ZeroVector;
+    FRotator Rotation = FRotator::ZeroRotator;
+    switch (Slot)
+    {
+        case ENWEquipmentSlot::Head: TargetDimension = 38.0f; break;
+        case ENWEquipmentSlot::Chest: TargetDimension = 78.0f; break;
+        case ENWEquipmentSlot::Gloves: TargetDimension = 28.0f; break;
+        case ENWEquipmentSlot::Legs: TargetDimension = 76.0f; break;
+        case ENWEquipmentSlot::Boots: TargetDimension = 34.0f; break;
+        default: break;
+    }
+    const float Scale = ComputeStaticScale(Mesh, TargetDimension);
+    return FTransform(Rotation, Location, FVector(Scale));
 }
 
 float ANWPlayerEquipmentVisualDirector::ComputeStaticScale(UStaticMesh* Mesh, float TargetDimension) const
@@ -392,12 +518,13 @@ float ANWPlayerEquipmentVisualDirector::WeaponTargetDimension(ENWWeaponType Type
 
 uint32 ANWPlayerEquipmentVisualDirector::BuildArmorSignature(const ANWCharacter* Character) const
 {
-    uint32 Signature = 0x56364752u;
+    uint32 Signature = 0x56374752u;
     if (!Character) { return Signature; }
     for (const FNWGeneratedItem& Item : Character->GetEquippedItems())
     {
         Signature = HashCombine(Signature, GetTypeHash(Item.ItemSeed));
         Signature = HashCombine(Signature, GetTypeHash(Item.AppearanceSeed));
+        Signature = HashCombine(Signature, GetTypeHash(Item.StyleId));
     }
     return Signature;
 }

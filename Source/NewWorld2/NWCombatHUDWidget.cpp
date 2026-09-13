@@ -40,6 +40,24 @@ namespace
             return FString::Printf(TEXT("%s · %s"), *NWCombat::EquipmentSlotToString(Item.Slot), *NWCombat::ArmorWeightToString(Item.ArmorWeight));
         return TEXT("Consumivel");
     }
+
+    FString AbilityIconGlyph(NWPremiumV6::ESkillTheme Theme)
+    {
+        switch (Theme)
+        {
+            case NWPremiumV6::ESkillTheme::Fire: return TEXT("▲");
+            case NWPremiumV6::ESkillTheme::Frost: return TEXT("✦");
+            case NWPremiumV6::ESkillTheme::Lightning: return TEXT("ϟ");
+            case NWPremiumV6::ESkillTheme::Earth: return TEXT("◆");
+            case NWPremiumV6::ESkillTheme::Blade: return TEXT("⚔");
+            case NWPremiumV6::ESkillTheme::Shadow: return TEXT("◉");
+            case NWPremiumV6::ESkillTheme::Blood: return TEXT("♦");
+            case NWPremiumV6::ESkillTheme::Holy: return TEXT("✚");
+            case NWPremiumV6::ESkillTheme::Projectile: return TEXT("➤");
+            case NWPremiumV6::ESkillTheme::Gunpowder: return TEXT("✹");
+            default: return TEXT("✦");
+        }
+    }
 }
 
 void UNWCombatHUDWidget::SetObservedCharacter(ANWCharacter* Character)
@@ -56,7 +74,7 @@ void UNWCombatHUDWidget::NativeConstruct()
     SetVisibility(ESlateVisibility::HitTestInvisible);
     SetRenderOpacity(1.0f);
     RefreshHUD();
-    UE_LOG(LogTemp, Warning, TEXT("[HUD-V6] HUD action-RPG construido: vitals compactos + loadout + QER tematico + bag comparativa."));
+    UE_LOG(LogTemp, Warning, TEXT("[HUD-V7] HUD action-RPG: vitals + loadout + icones Q/E/R + cooldown + bag comparativa."));
 }
 
 void UNWCombatHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
@@ -95,7 +113,7 @@ void UNWCombatHUDWidget::BuildHUD()
 {
     if (!WidgetTree || WidgetTree->RootWidget) return;
 
-    UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("HUDRootV6"));
+    UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("HUDRootV7"));
     WidgetTree->RootWidget = Root;
 
     UBorder* VitalsPanel = MakePanel(FLinearColor(0.015f, 0.020f, 0.026f, 0.88f), FMargin(14.0f, 10.0f));
@@ -113,14 +131,14 @@ void UNWCombatHUDWidget::BuildHUD()
 
     HealthText = MakeText(TEXT("VIDA"), 13);
     Vitals->AddChildToVerticalBox(HealthText);
-    HealthBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("PlayerHealthBarV6"));
+    HealthBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("PlayerHealthBarV7"));
     HealthBar->SetFillColorAndOpacity(FLinearColor(0.83f, 0.075f, 0.055f, 1.0f));
     UVerticalBoxSlot* HealthSlot = Vitals->AddChildToVerticalBox(HealthBar);
     HealthSlot->SetPadding(FMargin(0, 0, 0, 5));
 
     StaminaText = MakeText(TEXT("STAMINA"), 13);
     Vitals->AddChildToVerticalBox(StaminaText);
-    StaminaBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("PlayerStaminaBarV6"));
+    StaminaBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("PlayerStaminaBarV7"));
     StaminaBar->SetFillColorAndOpacity(FLinearColor(0.90f, 0.67f, 0.08f, 1.0f));
     UVerticalBoxSlot* StaminaSlot = Vitals->AddChildToVerticalBox(StaminaBar);
     StaminaSlot->SetPadding(FMargin(0, 0, 0, 5));
@@ -132,33 +150,45 @@ void UNWCombatHUDWidget::BuildHUD()
     StateText->SetColorAndOpacity(FSlateColor(FLinearColor(0.70f, 0.73f, 0.77f, 1.0f)));
     Vitals->AddChildToVerticalBox(StateText);
 
-    UBorder* AbilityPanel = MakePanel(FLinearColor(0.010f, 0.014f, 0.020f, 0.90f), FMargin(8.0f));
+    UBorder* AbilityPanel = MakePanel(FLinearColor(0.010f, 0.014f, 0.020f, 0.92f), FMargin(8.0f));
     UCanvasPanelSlot* AbilitySlot = Root->AddChildToCanvas(AbilityPanel);
     AbilitySlot->SetAnchors(FAnchors(0.5f, 1.0f));
     AbilitySlot->SetAlignment(FVector2D(0.5f, 1.0f));
     AbilitySlot->SetPosition(FVector2D(0.0f, -18.0f));
-    AbilitySlot->SetSize(FVector2D(780.0f, 132.0f));
+    AbilitySlot->SetSize(FVector2D(810.0f, 162.0f));
 
     UHorizontalBox* AbilityRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
     AbilityPanel->SetContent(AbilityRow);
-    AbilityTexts.Reset(); AbilityDescriptionTexts.Reset(); AbilityCards.Reset();
+    AbilityIconTexts.Reset(); AbilityTexts.Reset(); AbilityDescriptionTexts.Reset(); AbilityCards.Reset();
     const TCHAR* Keys[3] = { TEXT("Q"), TEXT("E"), TEXT("R") };
     for (int32 I = 0; I < 3; ++I)
     {
-        UBorder* Card = MakePanel(FLinearColor(0.035f, 0.045f, 0.060f, 0.98f), FMargin(10.0f, 7.0f));
+        UBorder* Card = MakePanel(FLinearColor(0.035f, 0.045f, 0.060f, 0.98f), FMargin(9.0f, 6.0f));
         UHorizontalBoxSlot* CardSlot = AbilityRow->AddChildToHorizontalBox(Card);
         CardSlot->SetPadding(FMargin(4.0f));
         CardSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
+
         UVerticalBox* CardBody = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
         Card->SetContent(CardBody);
-        UTextBlock* Title = MakeText(FString::Printf(TEXT("[%s] HABILIDADE"), Keys[I]), 14);
+
+        UTextBlock* Icon = MakeText(TEXT("✦"), 30);
+        Icon->SetJustification(ETextJustify::Center);
+        UVerticalBoxSlot* IconSlot = CardBody->AddChildToVerticalBox(Icon);
+        IconSlot->SetPadding(FMargin(0, 0, 0, -2));
+
+        UTextBlock* Title = MakeText(FString::Printf(TEXT("[%s] HABILIDADE"), Keys[I]), 13);
         Title->SetJustification(ETextJustify::Center);
         CardBody->AddChildToVerticalBox(Title);
-        UTextBlock* Description = MakeText(TEXT(""), 10);
+
+        UTextBlock* Description = MakeText(TEXT(""), 9);
         Description->SetJustification(ETextJustify::Center);
         Description->SetColorAndOpacity(FSlateColor(FLinearColor(0.72f, 0.75f, 0.78f, 1.0f)));
         CardBody->AddChildToVerticalBox(Description);
-        AbilityCards.Add(Card); AbilityTexts.Add(Title); AbilityDescriptionTexts.Add(Description);
+
+        AbilityIconTexts.Add(Icon);
+        AbilityCards.Add(Card);
+        AbilityTexts.Add(Title);
+        AbilityDescriptionTexts.Add(Description);
     }
 
     LootPromptText = MakeText(TEXT(""), 15);
@@ -167,7 +197,7 @@ void UNWCombatHUDWidget::BuildHUD()
     UCanvasPanelSlot* LootSlot = Root->AddChildToCanvas(LootPromptText);
     LootSlot->SetAnchors(FAnchors(0.5f, 1.0f));
     LootSlot->SetAlignment(FVector2D(0.5f, 1.0f));
-    LootSlot->SetPosition(FVector2D(0.0f, -158.0f));
+    LootSlot->SetPosition(FVector2D(0.0f, -188.0f));
     LootSlot->SetSize(FVector2D(900.0f, 38.0f));
 
     CrosshairText = MakeText(TEXT("+"), 20);
@@ -218,11 +248,11 @@ void UNWCombatHUDWidget::BuildHUD()
     UBorder* BagPanel = MakePanel(FLinearColor(0.014f, 0.020f, 0.028f, 1.0f), FMargin(12.0f));
     UHorizontalBoxSlot* RightSlot = InvBody->AddChildToHorizontalBox(BagPanel);
     RightSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
-    InventoryScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("InventoryScrollV6"));
+    InventoryScroll = WidgetTree->ConstructWidget<UScrollBox>(UScrollBox::StaticClass(), TEXT("InventoryScrollV7"));
     InventoryScroll->SetScrollBarVisibility(ESlateVisibility::Visible);
     InventoryScroll->SetAnimateWheelScrolling(true);
     BagPanel->SetContent(InventoryScroll);
-    InventoryItemsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("InventoryItemsV6"));
+    InventoryItemsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass(), TEXT("InventoryItemsV7"));
     InventoryScroll->AddChild(InventoryItemsBox);
 }
 
@@ -258,11 +288,30 @@ void UNWCombatHUDWidget::RefreshHUD()
     {
         const float Remaining = Character->GetAbilityCooldownRemaining(I);
         const FString Status = Remaining <= 0.01f ? TEXT("PRONTO") : FString::Printf(TEXT("%.1fs"), Remaining);
+        const NWPremiumV6::ESkillTheme SkillTheme = NWPremiumV6::Theme(Character->GetActiveWeapon(), I, Character->GetArrowElement());
+        const FLinearColor Theme = NWPremiumV6::ThemeColor(SkillTheme);
+
         AbilityTexts[I]->SetText(FText::FromString(FString::Printf(TEXT("[%s] %s\n%s"), Keys[I], *NWPremiumV6::AbilityName(Character->GetActiveWeapon(), I), *Status)));
-        if (AbilityDescriptionTexts.IsValidIndex(I)) AbilityDescriptionTexts[I]->SetText(FText::FromString(NWPremiumV6::AbilityDescription(Character->GetActiveWeapon(), I)));
-        const FLinearColor Theme = NWPremiumV6::ThemeColor(NWPremiumV6::Theme(Character->GetActiveWeapon(), I, Character->GetArrowElement()));
         AbilityTexts[I]->SetColorAndOpacity(FSlateColor(Remaining <= 0.01f ? Theme : FLinearColor(0.37f, 0.40f, 0.44f, 1.0f)));
-        if (AbilityCards.IsValidIndex(I)) AbilityCards[I]->SetBrushColor(FLinearColor(Theme.R * 0.10f + 0.018f, Theme.G * 0.10f + 0.020f, Theme.B * 0.10f + 0.026f, 0.98f));
+        if (AbilityDescriptionTexts.IsValidIndex(I))
+        {
+            AbilityDescriptionTexts[I]->SetText(FText::FromString(NWPremiumV6::AbilityDescription(Character->GetActiveWeapon(), I)));
+        }
+        if (AbilityIconTexts.IsValidIndex(I))
+        {
+            AbilityIconTexts[I]->SetText(FText::FromString(AbilityIconGlyph(SkillTheme)));
+            const FLinearColor IconColor = Remaining <= 0.01f ? Theme : FLinearColor(0.30f, 0.32f, 0.35f, 1.0f);
+            AbilityIconTexts[I]->SetColorAndOpacity(FSlateColor(IconColor));
+        }
+        if (AbilityCards.IsValidIndex(I))
+        {
+            const float ReadyBoost = Remaining <= 0.01f ? 0.15f : 0.07f;
+            AbilityCards[I]->SetBrushColor(FLinearColor(
+                Theme.R * ReadyBoost + 0.018f,
+                Theme.G * ReadyBoost + 0.020f,
+                Theme.B * ReadyBoost + 0.026f,
+                0.98f));
+        }
     }
 
     const FString Loot = Character->GetNearbyLootLabel();
@@ -275,7 +324,7 @@ void UNWCombatHUDWidget::ToggleInventory()
     bInventoryVisible = !bInventoryVisible;
     if (InventoryPanel) InventoryPanel->SetVisibility(bInventoryVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
     if (bInventoryVisible) RefreshInventory(true);
-    UE_LOG(LogTemp, Display, TEXT("[HUD-V6] Inventario %s"), bInventoryVisible ? TEXT("aberto") : TEXT("fechado"));
+    UE_LOG(LogTemp, Display, TEXT("[HUD-V7] Inventario %s"), bInventoryVisible ? TEXT("aberto") : TEXT("fechado"));
 }
 
 FString UNWCombatHUDWidget::FormatAffixes(const FNWGeneratedItem& Item) const

@@ -13,6 +13,46 @@
 #include "NWEnemy.h"
 #include "UObject/ConstructorHelpers.h"
 
+namespace
+{
+    void NormalizeDungeonMesh(UHierarchicalInstancedStaticMeshComponent* Component)
+    {
+        if (!Component) { return; }
+        UStaticMesh* Mesh = Component->GetStaticMesh();
+        if (!Mesh)
+        {
+            Component->SetRelativeScale3D(FVector::OneVector);
+            return;
+        }
+
+        const FBoxSphereBounds Bounds = Mesh->GetBounds();
+        const float MaxDimension = FMath::Max3(
+            static_cast<float>(Bounds.BoxExtent.X * 2.0),
+            static_cast<float>(Bounds.BoxExtent.Y * 2.0),
+            static_cast<float>(Bounds.BoxExtent.Z * 2.0));
+        const float NormalizedScale = (!FMath::IsFinite(MaxDimension) || MaxDimension <= 1.0f)
+            ? 1.0f
+            : FMath::Clamp(100.0f / MaxDimension, 0.01f, 12.0f);
+        Component->SetRelativeScale3D(FVector(NormalizedScale));
+    }
+
+    bool IsUnsafeDungeonAssetPath(const FString& InPath)
+    {
+        const FString Path = InPath.ToLower();
+        static const TCHAR* Blocked[] = {
+            TEXT("/character"), TEXT("/weapon"), TEXT("/armor"), TEXT("/armour"),
+            TEXT("/animation"), TEXT("/vfx"), TEXT("/fx/"), TEXT("/ui/"),
+            TEXT("preview"), TEXT("tutorial"), TEXT("collision"), TEXT("proxy"),
+            TEXT("lowpoly"), TEXT("stylized"), TEXT("cartoon")
+        };
+        for (const TCHAR* Token : Blocked)
+        {
+            if (Path.Contains(Token)) { return true; }
+        }
+        return false;
+    }
+}
+
 ANWDungeonSite::ANWDungeonSite()
 {
     PrimaryActorTick.bCanEverTick = false;
@@ -114,9 +154,18 @@ void ANWDungeonSite::BuildDungeonGeometry()
                 SecondaryStructures->SetStaticMesh(CrystalMesh);
             }
         }
+
+        NormalizeDungeonMesh(PrimaryStructures);
+        NormalizeDungeonMesh(SecondaryStructures);
+        UE_LOG(LogTemp, Warning, TEXT("[DUNGEON-V7] %s usa meshes instalados normalizados | primary=%s | secondary=%s"),
+            *GetDungeonThemeName().ToString(),
+            PrimaryStructures->GetStaticMesh() ? *PrimaryStructures->GetStaticMesh()->GetPathName() : TEXT("none"),
+            SecondaryStructures->GetStaticMesh() ? *SecondaryStructures->GetStaticMesh()->GetPathName() : TEXT("none"));
     }
     else
     {
+        PrimaryStructures->SetRelativeScale3D(FVector::OneVector);
+        SecondaryStructures->SetRelativeScale3D(FVector::OneVector);
         UE_LOG(LogTemp, Display, TEXT("[DUNGEON-VISUAL] modo seguro: geometria usa primitives autorados para escala previsivel."));
     }
 
@@ -254,14 +303,32 @@ UStaticMesh* ANWDungeonSite::FindInstalledMesh(const TArray<FString>& Keywords) 
     for (const FAssetData& Asset : Assets)
     {
         const FString Searchable = Asset.PackageName.ToString() + TEXT("/") + Asset.AssetName.ToString();
+        if (IsUnsafeDungeonAssetPath(Searchable)) { continue; }
+
         int32 Score = 0;
         for (const FString& Keyword : Keywords)
         {
-            if (Searchable.Contains(Keyword, ESearchCase::IgnoreCase)) { Score += 10; }
+            if (Searchable.Contains(Keyword, ESearchCase::IgnoreCase)) { Score += 12; }
         }
-        if (DungeonType == ENWDungeonType::DarkCastle && (Searchable.Contains(TEXT("Gothic"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Dark"), ESearchCase::IgnoreCase))) { Score += 6; }
-        if (DungeonType == ENWDungeonType::AncientCave && (Searchable.Contains(TEXT("Soul"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Dungeon"), ESearchCase::IgnoreCase))) { Score += 4; }
 
+        if (Searchable.Contains(TEXT("Fab"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Megascans"), ESearchCase::IgnoreCase)) { Score += 12; }
+        if (Searchable.Contains(TEXT("PBR"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Realistic"), ESearchCase::IgnoreCase)) { Score += 10; }
+        if (Searchable.Contains(TEXT("Ruins"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Medieval"), ESearchCase::IgnoreCase)) { Score += 12; }
+
+        if (DungeonType == ENWDungeonType::DarkCastle)
+        {
+            if (Searchable.Contains(TEXT("Gothic"), ESearchCase::IgnoreCase)) { Score += 30; }
+            if (Searchable.Contains(TEXT("Wall"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Arch"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Pillar"), ESearchCase::IgnoreCase)) { Score += 18; }
+            if (Searchable.Contains(TEXT("Castle"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Dark"), ESearchCase::IgnoreCase)) { Score += 8; }
+        }
+        else
+        {
+            if (Searchable.Contains(TEXT("Soul"), ESearchCase::IgnoreCase) && Searchable.Contains(TEXT("Cave"), ESearchCase::IgnoreCase)) { Score += 34; }
+            if (Searchable.Contains(TEXT("Dungeon"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Cave"), ESearchCase::IgnoreCase)) { Score += 16; }
+            if (Searchable.Contains(TEXT("Rock"), ESearchCase::IgnoreCase) || Searchable.Contains(TEXT("Stalag"), ESearchCase::IgnoreCase)) { Score += 8; }
+        }
+
+        if (Searchable.Contains(TEXT("KiteDemo"), ESearchCase::IgnoreCase)) { Score -= 15; }
         if (Score > BestScore)
         {
             BestScore = Score;
