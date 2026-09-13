@@ -86,9 +86,13 @@ private:
     void HideEnemyDebugMeshes(ANWEnemy* Enemy) const;
     void CleanupDeadState();
 
-    // Niagara automatico e opt-in. No playtest anterior o Asset Registry escolheu
-    // efeitos de madeira/debuff e compilou PSOs durante a luta. Flechas continuam
-    // visiveis com mesh/luz mesmo sem trail Niagara.
+    // V3: o EnemyVisualDirector e o unico dono do visual de mobs. Isso elimina
+    // a disputa observada no log entre [MOB-VISUAL] e [MONSTRO-VISUAL].
+    UPROPERTY(EditDefaultsOnly, Category="Presentation|Ownership")
+    bool bManageEnemyPresentation = false;
+
+    // Niagara generico do presentation manager continua desativado. A V3 usa o
+    // NWPremiumVFXDirector, que faz curadoria/preload por habilidade.
     UPROPERTY(EditDefaultsOnly, Category="Presentation|Performance")
     bool bEnableNiagaraPresentation = false;
 
