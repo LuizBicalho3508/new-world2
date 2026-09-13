@@ -1,7 +1,5 @@
 #include "NWEnemyVisualDirector.h"
 
-#include "Animation/AnimBlueprint.h"
-#include "Animation/AnimInstance.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Components/SkeletalMeshComponent.h"
 #include "Components/StaticMeshComponent.h"
@@ -25,14 +23,9 @@ namespace
             TEXT("/preview"),
             TEXT("/tutorial"),
             TEXT("/test/"),
-            // O playtest V3 mostrou assets antigos/retarget quebrados neste pack.
-            TEXT("/paragonminions/"),
             TEXT("/fx/skeletalmeshes/"),
             TEXT("_proto"),
             TEXT("/buff/"),
-            // Skins Greystone Novaborn/WhiteTiger recriaram Clothing Actors e o
-            // crash ocorreu em GetGPUSkinAPEXClothVertexFactoryUniformShaderParameters.
-            // No V4 nenhuma skin arbitraria entra automaticamente em mobs.
             TEXT("/skins/")
         };
         for (const TCHAR* Token : Blocked)
@@ -46,14 +39,18 @@ namespace
     {
         return Mesh && Mesh->GetSkeleton() && !Mesh->HasActiveClothingAssets();
     }
+
+    int32 ArchetypeSalt(const ANWEnemy* Enemy)
+    {
+        if (!Enemy) { return 0; }
+        return static_cast<int32>(Enemy->GetEnemyArchetype()) * 97 + (Enemy->IsWorldBoss() ? 997 : 0);
+    }
 }
 
 ANWEnemyVisualDirector::ANWEnemyVisualDirector()
 {
     PrimaryActorTick.bCanEverTick = true;
-    // Selecionar/aplicar mesh e um trabalho eventual. 10 Hz fazia scans de atores
-    // desnecessarios no i7-2600S; 4 Hz ainda reage rapidamente a novos spawns.
-    PrimaryActorTick.TickInterval = 0.25f;
+    PrimaryActorTick.TickInterval = 0.35f;
     bReplicates = false;
 }
 
@@ -77,32 +74,32 @@ void ANWEnemyVisualDirector::Tick(float DeltaSeconds)
 void ANWEnemyVisualDirector::ScanAssets()
 {
     IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
-
     FARFilter MeshFilter;
     MeshFilter.PackagePaths.Add(FName(TEXT("/Game")));
     MeshFilter.ClassPaths.Add(USkeletalMesh::StaticClass()->GetClassPathName());
     MeshFilter.bRecursivePaths = true;
     Registry.GetAssets(MeshFilter, SkeletalMeshAssets);
 
-    FARFilter AnimFilter;
-    AnimFilter.PackagePaths.Add(FName(TEXT("/Game")));
-    AnimFilter.ClassPaths.Add(UAnimBlueprint::StaticClass()->GetClassPathName());
-    AnimFilter.bRecursivePaths = true;
-    Registry.GetAssets(AnimFilter, AnimBlueprintAssets);
-
     int32 SafePathMeshes = 0;
-    int32 SafeAnimBPs = 0;
+    int32 CreatureCandidates = 0;
     for (const FAssetData& Asset : SkeletalMeshAssets)
     {
-        if (!IsUnsafeRuntimeAssetPath(Asset.PackageName.ToString())) { ++SafePathMeshes; }
-    }
-    for (const FAssetData& Asset : AnimBlueprintAssets)
-    {
-        if (!IsUnsafeRuntimeAssetPath(Asset.PackageName.ToString())) { ++SafeAnimBPs; }
+        const FString Path = Asset.PackageName.ToString().ToLower();
+        if (IsUnsafeRuntimeAssetPath(Path)) { continue; }
+        ++SafePathMeshes;
+        if (Path.Contains(TEXT("minion")) || Path.Contains(TEXT("monster")) || Path.Contains(TEXT("creature")) ||
+            Path.Contains(TEXT("undead")) || Path.Contains(TEXT("zombie")) || Path.Contains(TEXT("orc")) ||
+            Path.Contains(TEXT("paragongrux")) || Path.Contains(TEXT("paragonkhaimera")) ||
+            Path.Contains(TEXT("paragonrampage")) || Path.Contains(TEXT("paragonsevarog")) ||
+            Path.Contains(TEXT("paragonrevenant")) || Path.Contains(TEXT("paragoncountess")))
+        {
+            ++CreatureCandidates;
+        }
     }
 
-    UE_LOG(LogTemp, Display, TEXT("[MOB-VISUAL-V4] catalogo: skeletal=%d (paths seguros=%d) animbp=%d (seguros=%d) | cloth sera rejeitado antes de equipar"),
-        SkeletalMeshAssets.Num(), SafePathMeshes, AnimBlueprintAssets.Num(), SafeAnimBPs);
+    UE_LOG(LogTemp, Warning,
+        TEXT("[MOB-VISUAL-V7] catalogo skeletal=%d | caminhos seguros=%d | candidatos criatura=%d | AnimBP nao e requisito"),
+        SkeletalMeshAssets.Num(), SafePathMeshes, CreatureCandidates);
 }
 
 void ANWEnemyVisualDirector::RefreshEnemyVisuals()
@@ -114,14 +111,11 @@ void ANWEnemyVisualDirector::RefreshEnemyVisuals()
         ANWEnemy* Enemy = *It;
         if (!IsValid(Enemy)) { continue; }
 
-        const int32 Signature = static_cast<int32>(Enemy->GetEnemyArchetype()) + (Enemy->IsWorldBoss() ? 100 : 0);
+        const int32 Signature = ArchetypeSalt(Enemy);
         const int32* Applied = AppliedSignatures.Find(Enemy);
         if (Applied && *Applied == Signature && Enemy->GetMesh() && Enemy->GetMesh()->GetSkeletalMeshAsset()) { continue; }
 
-        if (ApplyVisual(Enemy))
-        {
-            AppliedSignatures.Add(Enemy, Signature);
-        }
+        if (ApplyVisual(Enemy)) { AppliedSignatures.Add(Enemy, Signature); }
     }
 
     for (auto It = AppliedSignatures.CreateIterator(); It; ++It)
@@ -139,10 +133,6 @@ void ANWEnemyVisualDirector::StabilizePlayerWeaponVisuals()
         ANWCharacter* Character = *It;
         if (!IsValid(Character) || !Character->GetMesh()) { continue; }
 
-        const USkeletalMesh* PlayerMesh = Character->GetMesh()->GetSkeletalMeshAsset();
-        const FString PlayerMeshPath = PlayerMesh ? PlayerMesh->GetPathName() : FString();
-        const bool bGreystoneRig = PlayerMeshPath.Contains(TEXT("ParagonGreystone"), ESearchCase::IgnoreCase);
-
         TArray<UStaticMeshComponent*> Components;
         Character->GetComponents<UStaticMeshComponent>(Components);
         int32 Hidden = 0;
@@ -154,9 +144,7 @@ void ANWEnemyVisualDirector::StabilizePlayerWeaponVisuals()
 
             const UStaticMesh* WeaponMesh = Component->GetStaticMesh();
             const FString WeaponPath = WeaponMesh ? WeaponMesh->GetPathName() : FString();
-            const bool bEnginePrimitive = WeaponPath.Contains(TEXT("/Engine/BasicShapes/"), ESearchCase::IgnoreCase);
-
-            if (bGreystoneRig || bEnginePrimitive)
+            if (WeaponPath.Contains(TEXT("/Engine/BasicShapes/"), ESearchCase::IgnoreCase))
             {
                 Component->SetVisibility(false, true);
                 Component->SetHiddenInGame(true, true);
@@ -167,7 +155,7 @@ void ANWEnemyVisualDirector::StabilizePlayerWeaponVisuals()
         if (Hidden > 0 && !LoggedWeaponSafetyCharacters.Contains(Character))
         {
             LoggedWeaponSafetyCharacters.Add(Character);
-            UE_LOG(LogTemp, Warning, TEXT("[WEAPON-VISUAL] %s: %d visual(is) externo(s) duplicado/placeholder ocultado(s); gameplay da arma permanece ativo."),
+            UE_LOG(LogTemp, Warning, TEXT("[WEAPON-VISUAL-V7] %s: %d placeholder(s) legado(s) ocultado(s)."),
                 *Character->GetName(), Hidden);
         }
     }
@@ -182,78 +170,68 @@ bool ANWEnemyVisualDirector::ApplyVisual(ANWEnemy* Enemy)
 {
     if (!Enemy || !Enemy->GetMesh()) { return false; }
 
-    UClass* CompatibleAnimClass = nullptr;
-    USkeletalMesh* Mesh = FindBestMeshForEnemy(Enemy, CompatibleAnimClass);
+    USkeletalMesh* Mesh = FindBestMeshForEnemy(Enemy);
     if (!Mesh)
     {
         HideDebugMeshes(Enemy);
         Enemy->GetMesh()->SetVisibility(false, true);
-        UE_LOG(LogTemp, Warning, TEXT("[MOB-VISUAL-V4] nenhum skeletal mesh sem cloth/seguro encontrado para %s; placeholder geometrico ocultado."), *Enemy->GetName());
+        UE_LOG(LogTemp, Warning, TEXT("[MOB-VISUAL-V7] nenhum skeletal mesh seguro encontrado para %s."), *Enemy->GetName());
         return false;
     }
 
-    if (Mesh->HasActiveClothingAssets())
+    if (!IsSafeRuntimeMesh(Mesh))
     {
-        UE_LOG(LogTemp, Error, TEXT("[CLOTH-SAFETY-V4] BLOQUEADO antes de SetSkeletalMeshAsset: %s"), *Mesh->GetPathName());
+        UE_LOG(LogTemp, Error, TEXT("[MOB-VISUAL-V7] mesh insegura bloqueada: %s"), *Mesh->GetPathName());
         return false;
     }
 
     Enemy->GetMesh()->SetSkeletalMeshAsset(Mesh);
-
-    // NPCs nao executam AnimBlueprint de heroi. Isso evita tanto logica de player
-    // quanto caminhos de cloth/pose que nao pertencem ao ator de AI.
     Enemy->GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
     Enemy->GetMesh()->SetAnimInstanceClass(nullptr);
 
     const bool bBoss = Enemy->IsWorldBoss();
-    float TargetHeight = bBoss ? 330.0f : 190.0f;
+    float TargetHeight = bBoss ? 340.0f : 190.0f;
     if (!bBoss)
     {
         switch (Enemy->GetEnemyArchetype())
         {
-            case ENWEnemyArchetype::Zombie: TargetHeight = 186.0f; break;
-            case ENWEnemyArchetype::Ghost: TargetHeight = 198.0f; break;
-            case ENWEnemyArchetype::Brute: TargetHeight = 224.0f; break;
+            case ENWEnemyArchetype::Zombie: TargetHeight = 188.0f; break;
+            case ENWEnemyArchetype::Ghost: TargetHeight = 202.0f; break;
+            case ENWEnemyArchetype::Brute: TargetHeight = 226.0f; break;
             default: break;
         }
     }
 
-    const float SizeVariation = 0.94f + static_cast<float>(Enemy->GetUniqueID() % 9u) * 0.015f;
-    Enemy->GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, bBoss ? -122.0f : -94.0f));
+    const float SizeVariation = 0.95f + static_cast<float>((Enemy->GetUniqueID() + ArchetypeSalt(Enemy)) % 7u) * 0.018f;
+    Enemy->GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, bBoss ? -124.0f : -94.0f));
     Enemy->GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
     Enemy->GetMesh()->SetRelativeScale3D(FVector(ComputeScale(Mesh, TargetHeight) * SizeVariation));
     Enemy->GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     Enemy->GetMesh()->SetVisibility(true, true);
 
     FLinearColor ArchetypeTint = FLinearColor::White;
-    if (Enemy->GetEnemyArchetype() == ENWEnemyArchetype::Zombie) { ArchetypeTint = FLinearColor(0.58f, 0.82f, 0.48f, 1.0f); }
-    else if (Enemy->GetEnemyArchetype() == ENWEnemyArchetype::Ghost) { ArchetypeTint = FLinearColor(0.42f, 0.70f, 1.0f, 1.0f); }
-    else { ArchetypeTint = FLinearColor(1.0f, 0.66f, 0.52f, 1.0f); }
+    if (Enemy->GetEnemyArchetype() == ENWEnemyArchetype::Zombie) { ArchetypeTint = FLinearColor(0.68f, 0.78f, 0.58f, 1.0f); }
+    else if (Enemy->GetEnemyArchetype() == ENWEnemyArchetype::Ghost) { ArchetypeTint = FLinearColor(0.52f, 0.72f, 1.0f, 1.0f); }
+    else { ArchetypeTint = FLinearColor(1.0f, 0.74f, 0.62f, 1.0f); }
     Enemy->GetMesh()->SetColorParameterValueOnMaterials(TEXT("Color"), ArchetypeTint);
     Enemy->GetMesh()->SetColorParameterValueOnMaterials(TEXT("BaseColor"), ArchetypeTint);
 
     HideDebugMeshes(Enemy);
-
-    UE_LOG(LogTemp, Warning, TEXT("[MOB-VISUAL-V4] %s archetype=%d boss=%s -> %s | cloth=NAO | anim=SequenceDirector | hp=%.0f"),
-        *Enemy->GetName(),
-        static_cast<int32>(Enemy->GetEnemyArchetype()),
-        Enemy->IsWorldBoss() ? TEXT("sim") : TEXT("nao"),
-        *Mesh->GetPathName(),
-        Enemy->GetMaxHealth());
+    UE_LOG(LogTemp, Warning, TEXT("[MOB-VISUAL-V7] %s archetype=%d boss=%s -> %s | sequence-driven | hp=%.0f"),
+        *Enemy->GetName(), static_cast<int32>(Enemy->GetEnemyArchetype()), Enemy->IsWorldBoss() ? TEXT("sim") : TEXT("nao"),
+        *Mesh->GetPathName(), Enemy->GetMaxHealth());
     return true;
 }
 
-USkeletalMesh* ANWEnemyVisualDirector::FindBestMeshForEnemy(const ANWEnemy* Enemy, UClass*& OutAnimClass) const
+USkeletalMesh* ANWEnemyVisualDirector::FindBestMeshForEnemy(const ANWEnemy* Enemy) const
 {
-    OutAnimClass = nullptr;
     if (!Enemy) { return nullptr; }
 
     if (Enemy->IsWorldBoss())
     {
         if (USkeletalMesh* Mesh = FindBestByKeywords(
-            { TEXT("Boss"), TEXT("Demon"), TEXT("Monster"), TEXT("Warlord"), TEXT("Giant"), TEXT("Ogre"), TEXT("Troll") },
-            { TEXT("Creature"), TEXT("Enemy"), TEXT("Undead"), TEXT("Dark"), TEXT("Realistic"), TEXT("PBR"), TEXT("Fab") },
-            OutAnimClass))
+            { TEXT("Boss"), TEXT("Demon"), TEXT("Monster"), TEXT("Warlord"), TEXT("Giant"), TEXT("Ogre"), TEXT("Troll"), TEXT("Rampage"), TEXT("Sevarog") },
+            { TEXT("Rampage"), TEXT("Sevarog"), TEXT("Grux"), TEXT("Khaimera"), TEXT("Creature"), TEXT("Enemy"), TEXT("Dark") }))
         {
             return Mesh;
         }
@@ -263,9 +241,8 @@ USkeletalMesh* ANWEnemyVisualDirector::FindBestMeshForEnemy(const ANWEnemy* Enem
     {
         case ENWEnemyArchetype::Zombie:
             if (USkeletalMesh* Mesh = FindBestByKeywords(
-                { TEXT("Zombie"), TEXT("Undead"), TEXT("Ghoul"), TEXT("Skeleton"), TEXT("Corpse") },
-                { TEXT("Enemy"), TEXT("Monster"), TEXT("Creature"), TEXT("Realistic"), TEXT("PBR"), TEXT("Fab") },
-                OutAnimClass))
+                { TEXT("Zombie"), TEXT("Undead"), TEXT("Ghoul"), TEXT("Skeleton"), TEXT("Corpse"), TEXT("Revenant"), TEXT("Minion") },
+                { TEXT("Revenant"), TEXT("Khaimera"), TEXT("Minion"), TEXT("Enemy"), TEXT("Monster"), TEXT("Creature") }))
             {
                 return Mesh;
             }
@@ -273,9 +250,8 @@ USkeletalMesh* ANWEnemyVisualDirector::FindBestMeshForEnemy(const ANWEnemy* Enem
 
         case ENWEnemyArchetype::Ghost:
             if (USkeletalMesh* Mesh = FindBestByKeywords(
-                { TEXT("Ghost"), TEXT("Wraith"), TEXT("Specter"), TEXT("Spectre"), TEXT("Spirit"), TEXT("Phantom") },
-                { TEXT("Enemy"), TEXT("Monster"), TEXT("Undead"), TEXT("Dark"), TEXT("Realistic"), TEXT("Fab") },
-                OutAnimClass))
+                { TEXT("Ghost"), TEXT("Wraith"), TEXT("Specter"), TEXT("Spectre"), TEXT("Spirit"), TEXT("Phantom"), TEXT("Sevarog"), TEXT("Countess") },
+                { TEXT("Sevarog"), TEXT("Countess"), TEXT("Dark"), TEXT("Undead"), TEXT("Enemy") }))
             {
                 return Mesh;
             }
@@ -284,71 +260,60 @@ USkeletalMesh* ANWEnemyVisualDirector::FindBestMeshForEnemy(const ANWEnemy* Enem
         case ENWEnemyArchetype::Brute:
         default:
             if (USkeletalMesh* Mesh = FindBestByKeywords(
-                { TEXT("Brute"), TEXT("Orc"), TEXT("Ogre"), TEXT("Troll"), TEXT("Warrior"), TEXT("Barbarian"), TEXT("Monster") },
-                { TEXT("Enemy"), TEXT("Creature"), TEXT("Heavy"), TEXT("Realistic"), TEXT("PBR"), TEXT("Fab") },
-                OutAnimClass))
+                { TEXT("Brute"), TEXT("Orc"), TEXT("Ogre"), TEXT("Troll"), TEXT("Grux"), TEXT("Rampage"), TEXT("Khaimera"), TEXT("Minion") },
+                { TEXT("Grux"), TEXT("Rampage"), TEXT("Khaimera"), TEXT("Minion"), TEXT("Heavy"), TEXT("Creature"), TEXT("Enemy") }))
             {
                 return Mesh;
             }
             break;
     }
 
-    return FindBestParagonFallback(Enemy, OutAnimClass);
+    return FindBestParagonFallback(Enemy);
 }
 
-USkeletalMesh* ANWEnemyVisualDirector::FindBestByKeywords(const TArray<FString>& Primary, const TArray<FString>& Preferred, UClass*& OutAnimClass) const
+USkeletalMesh* ANWEnemyVisualDirector::FindBestByKeywords(const TArray<FString>& Primary, const TArray<FString>& Preferred) const
 {
     int32 BestScore = TNumericLimits<int32>::Lowest();
     USkeletalMesh* BestMesh = nullptr;
-    UClass* BestAnim = nullptr;
 
     for (const FAssetData& Asset : SkeletalMeshAssets)
     {
         const int32 Score = ScoreAsset(Asset, Primary, Preferred, true);
-        if (Score <= BestScore) { continue; }
-        if (IsUnsafeRuntimeAssetPath(Asset.PackageName.ToString())) { continue; }
+        if (Score <= BestScore || IsUnsafeRuntimeAssetPath(Asset.PackageName.ToString())) { continue; }
 
         USkeletalMesh* Mesh = Cast<USkeletalMesh>(Asset.GetAsset());
         if (!IsSafeRuntimeMesh(Mesh)) { continue; }
-
-        UClass* AnimClass = FindAnimClass(Mesh, Preferred);
-        if (!AnimClass) { continue; }
-
         BestScore = Score;
         BestMesh = Mesh;
-        BestAnim = AnimClass;
     }
-
-    OutAnimClass = BestAnim;
     return BestMesh;
 }
 
-USkeletalMesh* ANWEnemyVisualDirector::FindBestParagonFallback(const ANWEnemy* Enemy, UClass*& OutAnimClass) const
+USkeletalMesh* ANWEnemyVisualDirector::FindBestParagonFallback(const ANWEnemy* Enemy) const
 {
     struct FCandidate
     {
         int32 Score = 0;
         USkeletalMesh* Mesh = nullptr;
-        UClass* Anim = nullptr;
         FString Path;
     };
 
     TArray<FString> Preferred;
     if (Enemy && Enemy->IsWorldBoss())
     {
-        Preferred = { TEXT("Rampage"), TEXT("Sevarog"), TEXT("Grux"), TEXT("Khaimera"), TEXT("Steel"), TEXT("Greystone") };
+        Preferred = { TEXT("Rampage"), TEXT("Sevarog"), TEXT("Grux"), TEXT("Khaimera"), TEXT("Terra") };
     }
     else if (Enemy && Enemy->GetEnemyArchetype() == ENWEnemyArchetype::Ghost)
     {
-        Preferred = { TEXT("Sevarog"), TEXT("Countess"), TEXT("Wraith"), TEXT("Gideon"), TEXT("Aurora"), TEXT("Greystone") };
+        Preferred = { TEXT("Sevarog"), TEXT("Countess"), TEXT("Revenant") };
     }
     else if (Enemy && Enemy->GetEnemyArchetype() == ENWEnemyArchetype::Zombie)
     {
-        Preferred = { TEXT("Revenant"), TEXT("Khaimera"), TEXT("Crunch"), TEXT("Greystone") };
+        Preferred = { TEXT("Revenant"), TEXT("Khaimera"), TEXT("Minion") };
     }
     else
     {
-        Preferred = { TEXT("Grux"), TEXT("Steel"), TEXT("Rampage"), TEXT("Greystone") };
+        Preferred = { TEXT("Grux"), TEXT("Rampage"), TEXT("Khaimera"), TEXT("Minion"), TEXT("Terra") };
     }
 
     TArray<FCandidate> Candidates;
@@ -358,35 +323,19 @@ USkeletalMesh* ANWEnemyVisualDirector::FindBestParagonFallback(const ANWEnemy* E
         if (!Searchable.Contains(TEXT("paragon")) || IsUnsafeRuntimeAssetPath(Searchable)) { continue; }
         if (Searchable.Contains(TEXT("weapon")) || Searchable.Contains(TEXT("preview"))) { continue; }
 
-        int32 Score = 20;
+        int32 Score = 15;
         for (const FString& Keyword : Preferred)
         {
-            if (Searchable.Contains(Keyword.ToLower())) { Score += 80; }
+            if (Searchable.Contains(Keyword.ToLower())) { Score += 110; }
         }
-        if (Searchable.Contains(TEXT("hero"))) { Score += 12; }
-        if (Searchable.Contains(TEXT("mesh"))) { Score += 5; }
-        // Base meshes sao preferidos. Skins sao bloqueadas para remover APEX cloth.
-        if (!Searchable.Contains(TEXT("/skins/"))) { Score += 35; }
+        if (Searchable.Contains(TEXT("minion"))) { Score += 55; }
+        if (Searchable.Contains(TEXT("hero"))) { Score += 8; }
+        if (Searchable.Contains(TEXT("greystone"))) { Score -= 600; }
+        if (Searchable.Contains(TEXT("sparrow")) || Searchable.Contains(TEXT("serath"))) { Score -= 90; }
 
         USkeletalMesh* Mesh = Cast<USkeletalMesh>(Asset.GetAsset());
-        if (!IsSafeRuntimeMesh(Mesh))
-        {
-            if (Mesh && Mesh->HasActiveClothingAssets())
-            {
-                UE_LOG(LogTemp, Display, TEXT("[CLOTH-SAFETY-V4] candidato ignorado: %s"), *Mesh->GetPathName());
-            }
-            continue;
-        }
-
-        UClass* AnimClass = FindAnimClass(Mesh, Preferred);
-        if (!AnimClass) { continue; }
-
-        FCandidate Candidate;
-        Candidate.Score = Score;
-        Candidate.Mesh = Mesh;
-        Candidate.Anim = AnimClass;
-        Candidate.Path = Mesh->GetPathName();
-        Candidates.Add(MoveTemp(Candidate));
+        if (!IsSafeRuntimeMesh(Mesh)) { continue; }
+        Candidates.Add({ Score, Mesh, Mesh->GetPathName() });
     }
 
     Candidates.Sort([](const FCandidate& A, const FCandidate& B)
@@ -395,48 +344,10 @@ USkeletalMesh* ANWEnemyVisualDirector::FindBestParagonFallback(const ANWEnemy* E
         return A.Path < B.Path;
     });
 
-    if (Candidates.IsEmpty())
-    {
-        OutAnimClass = nullptr;
-        return nullptr;
-    }
-
-    const int32 PoolSize = FMath::Min(5, Candidates.Num());
-    const uint32 Seed = Enemy ? Enemy->GetUniqueID() + static_cast<uint32>(Enemy->GetEnemyArchetype()) * 11u + (Enemy->IsWorldBoss() ? 31u : 0u) : 0u;
-    const FCandidate& Pick = Candidates[static_cast<int32>(Seed % static_cast<uint32>(PoolSize))];
-    OutAnimClass = Pick.Anim;
-    return Pick.Mesh;
-}
-
-UClass* ANWEnemyVisualDirector::FindAnimClass(USkeletalMesh* Mesh, const TArray<FString>& Preferred) const
-{
-    if (!Mesh || !Mesh->GetSkeleton()) { return nullptr; }
-
-    int32 BestScore = TNumericLimits<int32>::Lowest();
-    UClass* BestClass = nullptr;
-    for (const FAssetData& Asset : AnimBlueprintAssets)
-    {
-        const FString PackagePath = Asset.PackageName.ToString();
-        if (IsUnsafeRuntimeAssetPath(PackagePath)) { continue; }
-
-        UAnimBlueprint* AnimBlueprint = Cast<UAnimBlueprint>(Asset.GetAsset());
-        if (!AnimBlueprint || !AnimBlueprint->GeneratedClass || AnimBlueprint->TargetSkeleton != Mesh->GetSkeleton()) { continue; }
-
-        const FString Searchable = (PackagePath + TEXT("/") + Asset.AssetName.ToString()).ToLower();
-        int32 Score = 10;
-        for (const FString& Keyword : Preferred)
-        {
-            if (Searchable.Contains(Keyword.ToLower())) { Score += 20; }
-        }
-        if (Searchable.Contains(TEXT("animblueprint")) || Searchable.Contains(TEXT("anim_bp"))) { Score += 8; }
-        if (Searchable.Contains(TEXT("paragon"))) { Score += 12; }
-        if (Score > BestScore)
-        {
-            BestScore = Score;
-            BestClass = AnimBlueprint->GeneratedClass;
-        }
-    }
-    return BestClass;
+    if (Candidates.IsEmpty()) { return nullptr; }
+    const int32 PoolSize = FMath::Min(4, Candidates.Num());
+    const uint32 Seed = Enemy ? Enemy->GetUniqueID() + static_cast<uint32>(ArchetypeSalt(Enemy)) : 0u;
+    return Candidates[static_cast<int32>(Seed % static_cast<uint32>(PoolSize))].Mesh;
 }
 
 int32 ANWEnemyVisualDirector::ScoreAsset(const FAssetData& Asset, const TArray<FString>& Primary, const TArray<FString>& Preferred, bool bRequirePrimary) const
@@ -446,27 +357,30 @@ int32 ANWEnemyVisualDirector::ScoreAsset(const FAssetData& Asset, const TArray<F
 
     bool bPrimaryMatch = !bRequirePrimary;
     int32 Score = 0;
-
     for (const FString& Keyword : Primary)
     {
         if (Searchable.Contains(Keyword.ToLower()))
         {
             bPrimaryMatch = true;
-            Score += 45;
+            Score += 55;
         }
     }
     if (!bPrimaryMatch) { return TNumericLimits<int32>::Lowest(); }
 
     for (const FString& Keyword : Preferred)
     {
-        if (Searchable.Contains(Keyword.ToLower())) { Score += 16; }
+        if (Searchable.Contains(Keyword.ToLower())) { Score += 24; }
     }
 
-    if (Searchable.Contains(TEXT("realistic")) || Searchable.Contains(TEXT("pbr")) || Searchable.Contains(TEXT("fab"))) { Score += 35; }
-    if (Searchable.Contains(TEXT("enemy")) || Searchable.Contains(TEXT("creature")) || Searchable.Contains(TEXT("monster"))) { Score += 25; }
-    if (Searchable.Contains(TEXT("lowpoly")) || Searchable.Contains(TEXT("stylized")) || Searchable.Contains(TEXT("cartoon")) || Searchable.Contains(TEXT("voxel"))) { Score -= 400; }
-    if (Searchable.Contains(TEXT("weapon")) || Searchable.Contains(TEXT("armor")) || Searchable.Contains(TEXT("armour"))) { Score -= 180; }
-
+    if (Searchable.Contains(TEXT("paragonminions"))) { Score += 100; }
+    if (Searchable.Contains(TEXT("paragongrux")) || Searchable.Contains(TEXT("paragonkhaimera")) ||
+        Searchable.Contains(TEXT("paragonrampage")) || Searchable.Contains(TEXT("paragonsevarog")) ||
+        Searchable.Contains(TEXT("paragonrevenant")) || Searchable.Contains(TEXT("paragoncountess"))) { Score += 80; }
+    if (Searchable.Contains(TEXT("realistic")) || Searchable.Contains(TEXT("pbr")) || Searchable.Contains(TEXT("fab"))) { Score += 38; }
+    if (Searchable.Contains(TEXT("enemy")) || Searchable.Contains(TEXT("creature")) || Searchable.Contains(TEXT("monster"))) { Score += 28; }
+    if (Searchable.Contains(TEXT("greystone"))) { Score -= 650; }
+    if (Searchable.Contains(TEXT("lowpoly")) || Searchable.Contains(TEXT("stylized")) || Searchable.Contains(TEXT("cartoon")) || Searchable.Contains(TEXT("voxel"))) { Score -= 500; }
+    if (Searchable.Contains(TEXT("weapon")) || Searchable.Contains(TEXT("armor")) || Searchable.Contains(TEXT("armour"))) { Score -= 220; }
     return Score;
 }
 
