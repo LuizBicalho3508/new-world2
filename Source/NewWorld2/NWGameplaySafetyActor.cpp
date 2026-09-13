@@ -10,13 +10,16 @@
 #include "GameFramework/CharacterMovementComponent.h"
 #include "Math/RotationMatrix.h"
 #include "NWCharacter.h"
+#include "NWDungeonGuardian.h"
+#include "NWEnemy.h"
 #include "NWProceduralWorldManager.h"
 #include "UObject/ConstructorHelpers.h"
 
 ANWGameplaySafetyActor::ANWGameplaySafetyActor()
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.TickInterval = 0.016f;
+    // 20 Hz e suficiente para corrigir pousos/queda sem gastar um tick por frame.
+    PrimaryActorTick.TickInterval = 0.05f;
     bReplicates = false;
 
     SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
@@ -62,6 +65,7 @@ void ANWGameplaySafetyActor::Tick(float DeltaSeconds)
     }
 
     StabilizePlayers();
+    EnforceEnemyPopulationBudget(DeltaSeconds);
 }
 
 ANWProceduralWorldManager* ANWGameplaySafetyActor::ResolveWorldManager()
@@ -192,5 +196,106 @@ void ANWGameplaySafetyActor::StabilizePlayers()
                 UE_LOG(LogTemp, Warning, TEXT("[SAFETY] queda atraves do terreno corrigida: Z %.1f -> %.1f"), Current.Z, SafeCenterZ);
             }
         }
+    }
+}
+
+void ANWGameplaySafetyActor::EnforceEnemyPopulationBudget(float DeltaSeconds)
+{
+    if (!GetWorld() || GetNetMode() == NM_Client)
+    {
+        return;
+    }
+
+    PopulationCheckAccumulator += DeltaSeconds;
+    if (PopulationCheckAccumulator < PopulationCheckInterval)
+    {
+        return;
+    }
+    PopulationCheckAccumulator = 0.0f;
+
+    TArray<FVector> PlayerLocations;
+    for (TActorIterator<ANWCharacter> It(GetWorld()); It; ++It)
+    {
+        if (IsValid(*It))
+        {
+            PlayerLocations.Add(It->GetActorLocation());
+        }
+    }
+
+    struct FCullCandidate
+    {
+        ANWEnemy* Enemy = nullptr;
+        float NearestPlayerDistanceSq = 0.0f;
+    };
+
+    TArray<FCullCandidate> Candidates;
+    int32 TotalEnemies = 0;
+
+    for (TActorIterator<ANWEnemy> It(GetWorld()); It; ++It)
+    {
+        ANWEnemy* Enemy = *It;
+        if (!IsValid(Enemy))
+        {
+            continue;
+        }
+
+        ++TotalEnemies;
+
+        // Bosses e guardioes sao encontros de progressao e nunca entram no culling.
+        if (Enemy->IsWorldBoss() || Cast<ANWDungeonGuardian>(Enemy))
+        {
+            continue;
+        }
+
+        float NearestDistanceSq = TNumericLimits<float>::Max();
+        if (PlayerLocations.IsEmpty())
+        {
+            NearestDistanceSq = Enemy->GetActorLocation().SizeSquared2D();
+        }
+        else
+        {
+            for (const FVector& PlayerLocation : PlayerLocations)
+            {
+                const FVector Delta = Enemy->GetActorLocation() - PlayerLocation;
+                NearestDistanceSq = FMath::Min(NearestDistanceSq, FVector(Delta.X, Delta.Y, 0.0f).SizeSquared());
+            }
+        }
+
+        FCullCandidate& Candidate = Candidates.AddDefaulted_GetRef();
+        Candidate.Enemy = Enemy;
+        Candidate.NearestPlayerDistanceSq = NearestDistanceSq;
+    }
+
+    const int32 Excess = TotalEnemies - FMath::Max(1, MaxConcurrentEnemies);
+    if (Excess <= 0 || Candidates.IsEmpty())
+    {
+        return;
+    }
+
+    Candidates.Sort([](const FCullCandidate& A, const FCullCandidate& B)
+    {
+        return A.NearestPlayerDistanceSq > B.NearestPlayerDistanceSq;
+    });
+
+    int32 Removed = 0;
+    for (FCullCandidate& Candidate : Candidates)
+    {
+        if (Removed >= Excess)
+        {
+            break;
+        }
+        if (!IsValid(Candidate.Enemy))
+        {
+            continue;
+        }
+
+        Candidate.Enemy->Destroy();
+        ++Removed;
+    }
+
+    if (Removed > 0)
+    {
+        UE_LOG(LogTemp, Warning, TEXT("[BUDGET] inimigos=%d teto=%d removidos=%d (mobs mais distantes; bosses/guardioes preservados)"),
+            TotalEnemies, MaxConcurrentEnemies, Removed);
     }
 }
