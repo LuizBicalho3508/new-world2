@@ -11,8 +11,10 @@
 #include "NWCharacter.h"
 #include "NWContentPresentationManager.h"
 #include "NWEnemy.h"
+#include "NWEnemyVisualDirector.h"
 #include "NWGameplaySafetyActor.h"
 #include "NWLightingSafetyActor.h"
+#include "NWPremiumEnvironmentDirector.h"
 #include "NWPremiumGameplayDirector.h"
 #include "NWProceduralWorldManager.h"
 #include "NWWorldEventDirector.h"
@@ -67,6 +69,38 @@ namespace
 
         UE_LOG(LogTemp, Display, TEXT("[INPUT] mappings jogaveis normalizados: Q/E/R, RMB, Shift, 1/2, I; epoch somente F10."));
     }
+
+    template<typename TActorClass>
+    bool HasActorOfClass(UWorld* World)
+    {
+        if (!World) { return false; }
+        for (TActorIterator<TActorClass> It(World); It; ++It)
+        {
+            if (IsValid(*It)) { return true; }
+        }
+        return false;
+    }
+
+    template<typename TActorClass>
+    TActorClass* SpawnSingletonActor(UWorld* World, const TCHAR* LogTag)
+    {
+        if (!World || HasActorOfClass<TActorClass>(World)) { return nullptr; }
+
+        FActorSpawnParameters Params;
+        Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+        TActorClass* Spawned = World->SpawnActor<TActorClass>(
+            TActorClass::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+
+        if (Spawned)
+        {
+            UE_LOG(LogTemp, Display, TEXT("[BOOT] %s ativo: %s"), LogTag, *Spawned->GetName());
+        }
+        else
+        {
+            UE_LOG(LogTemp, Error, TEXT("[BOOT] falha ao criar %s."), LogTag);
+        }
+        return Spawned;
+    }
 }
 
 ANWGameMode::ANWGameMode()
@@ -78,8 +112,8 @@ void ANWGameMode::StartPlay()
 {
     NormalizePlayableInputMappings();
 
-    // Uma unica sincronizacao de metadata antes do play. Nenhum sistema de combate
-    // deve fazer varredura global do Asset Registry depois que o jogador assume controle.
+    // Sincroniza metadata uma unica vez antes do play. Os diretores premium usam
+    // esse catalogo para escolher assets reais e depois trabalham com caches.
     {
         IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
         const TArray<FString> PathsToScan = { TEXT("/Game") };
@@ -93,75 +127,32 @@ void ANWGameMode::StartPlay()
         RuntimeWorldManager->DisableAutomaticEvolution();
     }
 
-    if (GetWorld())
+    UWorld* World = GetWorld();
+    if (World)
     {
-        bool bHasDirector = false;
-        for (TActorIterator<ANWWorldEventDirector> It(GetWorld()); It; ++It)
-        {
-            bHasDirector = true;
-            break;
-        }
-        if (!bHasDirector)
+        SpawnSingletonActor<ANWWorldEventDirector>(World, TEXT("WorldEventDirector"));
+        SpawnSingletonActor<ANWLightingSafetyActor>(World, TEXT("LightingSafetyActor"));
+        SpawnSingletonActor<ANWGameplaySafetyActor>(World, TEXT("GameplaySafetyActor"));
+
+        if (!HasActorOfClass<ANWContentPresentationManager>(World))
         {
             FActorSpawnParameters Params;
             Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-            GetWorld()->SpawnActor<ANWWorldEventDirector>(ANWWorldEventDirector::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+            if (World->SpawnActor<ANWContentPresentationManager>(
+                ANWContentPresentationManager::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params))
+            {
+                UE_LOG(LogTemp, Display, TEXT("[VISUAL] presentation manager unico ativo; sem sobrescritas concorrentes de arma/armadura."));
+            }
         }
 
-        bool bHasLightingSafety = false;
-        for (TActorIterator<ANWLightingSafetyActor> It(GetWorld()); It; ++It)
-        {
-            bHasLightingSafety = true;
-            break;
-        }
-        if (!bHasLightingSafety)
-        {
-            FActorSpawnParameters Params;
-            Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-            GetWorld()->SpawnActor<ANWLightingSafetyActor>(ANWLightingSafetyActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-        }
+        // Premium V2: estes dois sistemas ficam explicitamente ligados ao GameMode.
+        // O PremiumGameplayDirector ainda verifica a existencia deles como segunda
+        // barreira de seguranca, mas o boot principal nao depende mais dessa cadeia.
+        SpawnSingletonActor<ANWPremiumEnvironmentDirector>(World, TEXT("PremiumEnvironmentDirector"));
+        SpawnSingletonActor<ANWEnemyVisualDirector>(World, TEXT("EnemyVisualDirector"));
+        SpawnSingletonActor<ANWPremiumGameplayDirector>(World, TEXT("PremiumGameplayDirector"));
 
-        bool bHasGameplaySafety = false;
-        for (TActorIterator<ANWGameplaySafetyActor> It(GetWorld()); It; ++It)
-        {
-            bHasGameplaySafety = true;
-            break;
-        }
-        if (!bHasGameplaySafety)
-        {
-            FActorSpawnParameters Params;
-            Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-            GetWorld()->SpawnActor<ANWGameplaySafetyActor>(ANWGameplaySafetyActor::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-        }
-
-        bool bHasPresentationManager = false;
-        for (TActorIterator<ANWContentPresentationManager> It(GetWorld()); It; ++It)
-        {
-            bHasPresentationManager = true;
-            break;
-        }
-        if (!bHasPresentationManager)
-        {
-            FActorSpawnParameters Params;
-            Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-            GetWorld()->SpawnActor<ANWContentPresentationManager>(
-                ANWContentPresentationManager::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-            UE_LOG(LogTemp, Display, TEXT("[VISUAL] presentation manager unico ativo; sem sobrescritas concorrentes de arma/armadura."));
-        }
-
-        bool bHasPremiumDirector = false;
-        for (TActorIterator<ANWPremiumGameplayDirector> It(GetWorld()); It; ++It)
-        {
-            bHasPremiumDirector = true;
-            break;
-        }
-        if (!bHasPremiumDirector)
-        {
-            FActorSpawnParameters Params;
-            Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-            GetWorld()->SpawnActor<ANWPremiumGameplayDirector>(
-                ANWPremiumGameplayDirector::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-        }
+        UE_LOG(LogTemp, Warning, TEXT("[PREMIUM-V2] bootstrap completo: ambiente real + mobs reais + free aim + reticulo."));
     }
 
     Super::StartPlay();
@@ -198,7 +189,8 @@ void ANWGameMode::SpawnPlaytestEncounter()
     }
 
     const FVector SpawnCenter(900.0f, 900.0f, 0.0f);
-    constexpr float EncounterRadius = 1650.0f;
+    constexpr float EncounterRadius = 1900.0f;
+    constexpr int32 DesiredNearbyEnemies = 5;
     int32 NearbyRegularEnemies = 0;
 
     for (TActorIterator<ANWEnemy> It(GetWorld()); It; ++It)
@@ -217,7 +209,7 @@ void ANWGameMode::SpawnPlaytestEncounter()
         }
     }
 
-    const int32 Needed = FMath::Max(0, 3 - NearbyRegularEnemies);
+    const int32 Needed = FMath::Max(0, DesiredNearbyEnemies - NearbyRegularEnemies);
     if (Needed <= 0)
     {
         UE_LOG(LogTemp, Display, TEXT("[PLAYTEST] READY | %d inimigos ja estavam proximos ao spawn."), NearbyRegularEnemies);
@@ -230,10 +222,14 @@ void ANWGameMode::SpawnPlaytestEncounter()
         FVector2D Offset;
     };
 
+    // Arco frontal em relacao ao spawn/rotacao inicial. Ha variedade suficiente
+    // para validar melee, area damage, free-aim e leitura visual dos arquetipos.
     const FEncounterSpawn Spawns[] = {
-        { ENWEnemyArchetype::Zombie, FVector2D(780.0f, 160.0f) },
-        { ENWEnemyArchetype::Ghost, FVector2D(-650.0f, 520.0f) },
-        { ENWEnemyArchetype::Brute, FVector2D(260.0f, -820.0f) }
+        { ENWEnemyArchetype::Zombie, FVector2D(760.0f, -360.0f) },
+        { ENWEnemyArchetype::Ghost,  FVector2D(900.0f,  300.0f) },
+        { ENWEnemyArchetype::Brute,  FVector2D(1120.0f,   0.0f) },
+        { ENWEnemyArchetype::Zombie, FVector2D(1320.0f, -560.0f) },
+        { ENWEnemyArchetype::Ghost,  FVector2D(1480.0f,  520.0f) }
     };
 
     int32 Spawned = 0;
@@ -248,7 +244,8 @@ void ANWGameMode::SpawnPlaytestEncounter()
         const float Y = SpawnCenter.Y + Entry.Offset.Y;
         const float Z = Manager->GetTerrainHeightAt(X, Y) + 125.0f;
         const FVector Location(X, Y, Z);
-        const FTransform Transform((SpawnCenter - FVector(X, Y, 0.0f)).Rotation(), Location);
+        const FVector FacingVector = SpawnCenter - FVector(X, Y, SpawnCenter.Z);
+        const FTransform Transform(FacingVector.Rotation(), Location);
 
         ANWEnemy* Enemy = GetWorld()->SpawnActorDeferred<ANWEnemy>(
             ANWEnemy::StaticClass(), Transform, this, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
@@ -260,10 +257,13 @@ void ANWGameMode::SpawnPlaytestEncounter()
         Enemy->ConfigureEnemy(Entry.Archetype, false, 1);
         UGameplayStatics::FinishSpawningActor(Enemy, Transform);
         ++Spawned;
+
+        UE_LOG(LogTemp, Display, TEXT("[PLAYTEST-MOB] spawn archetype=%d em %s"),
+            static_cast<int32>(Entry.Archetype), *Location.ToCompactString());
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[PLAYTEST] READY | encontro inicial=%d | inimigos proximos existentes=%d | WASD/Mouse LMB/RMB Q/E/R G I T/Y"),
-        Spawned, NearbyRegularEnemies);
+    UE_LOG(LogTemp, Warning, TEXT("[PLAYTEST] READY | encontro inicial novos=%d | existentes=%d | alvo=%d | WASD/Mouse LMB/RMB Q/E/R G I T/Y"),
+        Spawned, NearbyRegularEnemies, DesiredNearbyEnemies);
 }
 
 ANWProceduralWorldManager* ANWGameMode::EnsureWorldManager()
