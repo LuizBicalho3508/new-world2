@@ -6,7 +6,6 @@
 #include "Components/SkeletalMeshComponent.h"
 #include "Engine/SkeletalMesh.h"
 #include "EngineUtils.h"
-#include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "Modules/ModuleManager.h"
 #include "NWEnemy.h"
@@ -19,6 +18,7 @@ namespace
         return Path.Contains(TEXT("animstarterpack")) ||
             Path.Contains(TEXT("free_magic/demo")) ||
             Path.Contains(TEXT("deformablesnowsystem/demo")) ||
+            Path.Contains(TEXT("/paragonminions/")) ||
             Path.Contains(TEXT("/demo/")) ||
             Path.Contains(TEXT("/preview")) ||
             Path.Contains(TEXT("/tutorial"));
@@ -28,7 +28,8 @@ namespace
 ANWEnemyAnimationDirector::ANWEnemyAnimationDirector()
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.TickInterval = 0.08f;
+    // 7 Hz e suficiente para locomocao visual e reduz enumeracao/CPU em hordas.
+    PrimaryActorTick.TickInterval = 0.14f;
     bReplicates = false;
 }
 
@@ -37,7 +38,7 @@ void ANWEnemyAnimationDirector::BeginPlay()
     Super::BeginPlay();
     if (GetNetMode() == NM_DedicatedServer) { return; }
     ScanAnimations();
-    UE_LOG(LogTemp, Warning, TEXT("[MOB-ANIM-V3] sequence director ativo | assets=%d | AnimBP de heroi nao e usado para AI."), AnimSequenceAssets.Num());
+    UE_LOG(LogTemp, Warning, TEXT("[MOB-ANIM-V4] sequence director ativo | assets=%d | cache por Skeleton | AnimBP de heroi nao usado em AI."), AnimSequenceAssets.Num());
 }
 
 void ANWEnemyAnimationDirector::ScanAnimations()
@@ -66,6 +67,10 @@ void ANWEnemyAnimationDirector::Tick(float DeltaSeconds)
     {
         if (!It.Key().IsValid()) { It.RemoveCurrent(); }
     }
+    for (auto It = SkeletonCache.CreateIterator(); It; ++It)
+    {
+        if (!It.Key().IsValid()) { It.RemoveCurrent(); }
+    }
 }
 
 void ANWEnemyAnimationDirector::EnsureSequences(ANWEnemy* Enemy, FEnemyAnimState& State)
@@ -78,20 +83,36 @@ void ANWEnemyAnimationDirector::EnsureSequences(ANWEnemy* Enemy, FEnemyAnimState
     State = FEnemyAnimState();
     State.Skeleton = Skeleton;
 
-    const TArray<FString> CommonPreferred = {
-        TEXT("Paragon"), TEXT("Creature"), TEXT("Monster"), TEXT("Enemy"), TEXT("Combat")
-    };
-    State.Idle = FindBestSequence(Skeleton,
-        { TEXT("Idle"), TEXT("Stand") },
-        CommonPreferred);
-    State.Run = FindBestSequence(Skeleton,
-        { TEXT("Run"), TEXT("Jog"), TEXT("Walk") },
-        CommonPreferred);
-    State.Attack = FindBestSequence(Skeleton,
-        { TEXT("Attack"), TEXT("Melee"), TEXT("Primary"), TEXT("Strike"), TEXT("Slash") },
-        CommonPreferred);
+    if (const FSkeletonAnimSet* Cached = SkeletonCache.Find(Skeleton))
+    {
+        State.Idle = Cached->Idle;
+        State.Run = Cached->Run;
+        State.Attack = Cached->Attack;
+    }
+    else
+    {
+        const TArray<FString> CommonPreferred = {
+            TEXT("Paragon"), TEXT("Creature"), TEXT("Monster"), TEXT("Enemy"), TEXT("Combat")
+        };
 
-    UE_LOG(LogTemp, Display, TEXT("[MOB-ANIM-V3] %s | idle=%s | run=%s | attack=%s"),
+        FSkeletonAnimSet NewSet;
+        NewSet.Idle = FindBestSequence(Skeleton,
+            { TEXT("Idle"), TEXT("Stand") },
+            CommonPreferred);
+        NewSet.Run = FindBestSequence(Skeleton,
+            { TEXT("Run"), TEXT("Jog"), TEXT("Walk") },
+            CommonPreferred);
+        NewSet.Attack = FindBestSequence(Skeleton,
+            { TEXT("Attack"), TEXT("Melee"), TEXT("Primary"), TEXT("Strike"), TEXT("Slash") },
+            CommonPreferred);
+
+        SkeletonCache.Add(Skeleton, NewSet);
+        State.Idle = NewSet.Idle;
+        State.Run = NewSet.Run;
+        State.Attack = NewSet.Attack;
+    }
+
+    UE_LOG(LogTemp, Display, TEXT("[MOB-ANIM-V4] %s | idle=%s | run=%s | attack=%s"),
         *Enemy->GetName(),
         State.Idle.IsValid() ? *State.Idle->GetName() : TEXT("-"),
         State.Run.IsValid() ? *State.Run->GetName() : TEXT("-"),
