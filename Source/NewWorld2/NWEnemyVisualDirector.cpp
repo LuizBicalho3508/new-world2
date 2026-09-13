@@ -196,8 +196,6 @@ bool ANWEnemyVisualDirector::ApplyVisual(ANWEnemy* Enemy)
         }
     }
 
-    // Pequena variacao deterministica impede uma fileira de clones mesmo quando o
-    // usuario possui somente um heroi/skin compativel instalado localmente.
     const float SizeVariation = 0.94f + static_cast<float>(Enemy->GetUniqueID() % 9u) * 0.015f;
     Enemy->GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, bBoss ? -122.0f : -94.0f));
     Enemy->GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
@@ -205,14 +203,12 @@ bool ANWEnemyVisualDirector::ApplyVisual(ANWEnemy* Enemy)
     Enemy->GetMesh()->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     Enemy->GetMesh()->SetVisibility(true, true);
 
-    // Se o material expuser um parametro de cor, isso diferencia arquetipos sem
-    // exigir material instanciado manualmente. Materiais sem esse parametro ignoram.
     FLinearColor ArchetypeTint = FLinearColor::White;
     if (Enemy->GetEnemyArchetype() == ENWEnemyArchetype::Zombie) { ArchetypeTint = FLinearColor(0.58f, 0.82f, 0.48f, 1.0f); }
     else if (Enemy->GetEnemyArchetype() == ENWEnemyArchetype::Ghost) { ArchetypeTint = FLinearColor(0.42f, 0.70f, 1.0f, 1.0f); }
     else { ArchetypeTint = FLinearColor(1.0f, 0.66f, 0.52f, 1.0f); }
-    Enemy->GetMesh()->SetVectorParameterValueOnMaterials(TEXT("Color"), ArchetypeTint);
-    Enemy->GetMesh()->SetVectorParameterValueOnMaterials(TEXT("BaseColor"), ArchetypeTint);
+    Enemy->GetMesh()->SetColorParameterValueOnMaterials(TEXT("Color"), ArchetypeTint);
+    Enemy->GetMesh()->SetColorParameterValueOnMaterials(TEXT("BaseColor"), ArchetypeTint);
 
     HideDebugMeshes(Enemy);
 
@@ -347,8 +343,6 @@ USkeletalMesh* ANWEnemyVisualDirector::FindBestParagonFallback(const ANWEnemy* E
         }
         if (Searchable.Contains(TEXT("hero"))) { Score += 12; }
         if (Searchable.Contains(TEXT("mesh"))) { Score += 5; }
-        // Skins sao desejaveis no V3: ajudam a evitar dezenas de clones quando o
-        // usuario tem somente um pack Paragon completo instalado.
         if (Searchable.Contains(TEXT("skin"))) { Score += 8; }
 
         USkeletalMesh* Mesh = Cast<USkeletalMesh>(Asset.GetAsset());
@@ -376,7 +370,6 @@ USkeletalMesh* ANWEnemyVisualDirector::FindBestParagonFallback(const ANWEnemy* E
         return nullptr;
     }
 
-    // Escolhe entre os melhores candidatos, em vez de usar sempre o mesmo primeiro.
     const int32 PoolSize = FMath::Min(5, Candidates.Num());
     const uint32 Seed = Enemy ? Enemy->GetUniqueID() + static_cast<uint32>(Enemy->GetEnemyArchetype()) * 11u + (Enemy->IsWorldBoss() ? 31u : 0u) : 0u;
     const FCandidate& Pick = Candidates[static_cast<int32>(Seed % static_cast<uint32>(PoolSize))];
