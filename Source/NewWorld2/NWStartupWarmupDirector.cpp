@@ -96,21 +96,11 @@ void ANWStartupWarmupDirector::SetPlayerInputBlocked(bool bBlocked)
         APlayerController* PC = It->Get();
         if (!PC || !PC->IsLocalController()) { continue; }
 
+        // Bloqueamos apenas gameplay; nao trocamos InputMode, evitando disputa com
+        // Slate/viewport durante o bootstrap no Wayland/KDE.
         PC->SetIgnoreMoveInput(bBlocked);
         PC->SetIgnoreLookInput(bBlocked);
-        if (bBlocked)
-        {
-            FInputModeUIOnly Mode;
-            Mode.SetLockMouseToViewportBehavior(EMouseLockMode::DoNotLock);
-            PC->SetInputMode(Mode);
-            PC->bShowMouseCursor = false;
-        }
-        else
-        {
-            FInputModeGameOnly Mode;
-            PC->SetInputMode(Mode);
-            PC->bShowMouseCursor = false;
-        }
+        PC->bShowMouseCursor = false;
     }
 }
 
