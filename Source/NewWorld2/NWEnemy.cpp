@@ -12,6 +12,7 @@
 #include "Net/UnrealNetwork.h"
 #include "NWCivilian.h"
 #include "NWCharacter.h"
+#include "NWCombatDirectorSubsystem.h"
 #include "NWCombatLibrary.h"
 #include "NWEnemyHealthBarWidget.h"
 #include "NWLootPickup.h"
@@ -57,7 +58,11 @@ void ANWEnemy::BeginPlay()
 {
     Super::BeginPlay();
     ApplyArchetypeStats();
-    if (HasAuthority()) { Health = MaxHealth; }
+    if (HasAuthority())
+    {
+        Health = MaxHealth;
+        Poise = MaxPoise;
+    }
     if (GetCharacterMovement())
     {
         GetCharacterMovement()->MaxWalkSpeed = MoveSpeed;
@@ -66,6 +71,18 @@ void ANWEnemy::BeginPlay()
     }
     BindHealthBar();
     RefreshHealthBar();
+}
+
+void ANWEnemy::EndPlay(const EEndPlayReason::Type EndPlayReason)
+{
+    if (GetWorld())
+    {
+        if (UNWCombatDirectorSubsystem* Director = GetWorld()->GetSubsystem<UNWCombatDirectorSubsystem>())
+        {
+            Director->ForgetActor(this);
+        }
+    }
+    Super::EndPlay(EndPlayReason);
 }
 
 void ANWEnemy::ConfigureEnemy(ENWEnemyArchetype InArchetype, bool bInWorldBoss, int32 InBossTier)
@@ -79,11 +96,15 @@ void ANWEnemy::ConfigureEnemy(ENWEnemyArchetype InArchetype, bool bInWorldBoss, 
     SetNetUpdateFrequency(bWorldBoss ? 15.0f : 10.0f);
     SetMinNetUpdateFrequency(bWorldBoss ? 7.5f : 4.0f);
     CachedTarget.Reset();
+    CommittedAttackTarget.Reset();
+    bAttackCommitted = false;
     NextTargetRefreshTime = -1000.0f;
 
     if (HasAuthority())
     {
         Health = MaxHealth;
+        Poise = MaxPoise;
+        LastPoiseDamageTime = -1000.0f;
         ForceNetUpdate();
     }
 
@@ -100,46 +121,108 @@ void ANWEnemy::ApplyArchetypeStats()
     if (GetCapsuleComponent()) { GetCapsuleComponent()->SetCapsuleSize(42.0f, 88.0f); }
     PlayerAggroRange = 2350.0f;
     WorldTargetRange = 9000.0f;
+    PoiseRecoveryDelay = 2.0f;
+    PoiseRecoveryPerSecond = 34.0f;
+    AttackWindupSeconds = 0.34f;
 
     switch (EnemyArchetype)
     {
         case ENWEnemyArchetype::Zombie:
             MaxHealth = 270.0f;
+            MaxPoise = 82.0f;
             MoveSpeed = 178.0f;
             AttackDamage = 12.0f;
             AttackCooldown = 1.35f;
             AttackRange = 170.0f;
+            AttackWindupSeconds = 0.46f;
             break;
         case ENWEnemyArchetype::Ghost:
             MaxHealth = 230.0f;
+            MaxPoise = 64.0f;
+            PoiseRecoveryPerSecond = 42.0f;
             MoveSpeed = 290.0f;
             AttackDamage = 13.0f;
             AttackCooldown = 1.05f;
             AttackRange = 200.0f;
+            AttackWindupSeconds = 0.24f;
             break;
         case ENWEnemyArchetype::Brute:
         default:
             MaxHealth = 360.0f;
+            MaxPoise = 132.0f;
             MoveSpeed = 225.0f;
             AttackDamage = 16.0f;
             AttackCooldown = 1.30f;
             AttackRange = 185.0f;
+            AttackWindupSeconds = 0.38f;
             break;
     }
 
     if (bWorldBoss)
     {
         MaxHealth = 2600.0f + BossTier * 520.0f;
+        MaxPoise = 280.0f + BossTier * 36.0f;
+        PoiseRecoveryDelay = 2.65f;
+        PoiseRecoveryPerSecond = 46.0f + BossTier * 3.0f;
         AttackDamage = 17.0f + BossTier * 2.8f;
         AttackCooldown = FMath::Max(0.88f, 1.38f - BossTier * 0.045f);
         AttackRange = 245.0f;
+        AttackWindupSeconds = FMath::Max(0.34f, 0.50f - BossTier * 0.015f);
         MoveSpeed = FMath::Max(185.0f, MoveSpeed * 0.90f);
         PlayerAggroRange = 4600.0f;
         WorldTargetRange = 6500.0f;
         if (GetCapsuleComponent()) { GetCapsuleComponent()->SetCapsuleSize(62.0f, 120.0f); }
     }
 
+    Poise = FMath::Clamp(Poise, 0.0f, MaxPoise);
     if (GetCharacterMovement()) { GetCharacterMovement()->MaxWalkSpeed = MoveSpeed; }
+}
+
+bool ANWEnemy::ResolveCommittedAttack(float Now)
+{
+    if (!bAttackCommitted)
+    {
+        return false;
+    }
+
+    UCharacterMovementComponent* Movement = GetCharacterMovement();
+    if (Movement) { Movement->Velocity = FVector::ZeroVector; }
+
+    AActor* Target = CommittedAttackTarget.Get();
+    if (IsValid(Target))
+    {
+        const FVector ToTarget = Target->GetActorLocation() - GetActorLocation();
+        FVector FaceTarget(ToTarget.X, ToTarget.Y, 0.0f);
+        if (!FaceTarget.IsNearlyZero()) { SetActorRotation(FaceTarget.Rotation()); }
+    }
+
+    if (Now < AttackResolveTime)
+    {
+        return true;
+    }
+
+    bAttackCommitted = false;
+    CommittedAttackTarget.Reset();
+    LastAttackTime = Now;
+
+    if (!IsValid(Target))
+    {
+        return true;
+    }
+
+    const float Distance2D = FVector::Dist2D(GetActorLocation(), Target->GetActorLocation());
+    const float ResolveRange = AttackRange * (bWorldBoss ? 1.42f : 1.30f);
+    if (Distance2D <= ResolveRange)
+    {
+        UGameplayStatics::ApplyDamage(Target, AttackDamage, GetController(), this, UDamageType::StaticClass());
+        UE_LOG(LogTemp, Verbose, TEXT("[AI-COMBAT] %s resolveu ataque em %s."), *GetDisplayName(), *Target->GetName());
+    }
+    else
+    {
+        UE_LOG(LogTemp, Verbose, TEXT("[AI-COMBAT] %s errou ataque telegrafado: alvo saiu do alcance."), *GetDisplayName());
+    }
+
+    return true;
 }
 
 void ANWEnemy::Tick(float DeltaSeconds)
@@ -158,9 +241,22 @@ void ANWEnemy::Tick(float DeltaSeconds)
 
     UCharacterMovementComponent* Movement = GetCharacterMovement();
     const float Now = GetWorld()->GetTimeSeconds();
+
+    if ((Now - LastPoiseDamageTime) >= PoiseRecoveryDelay && Poise < MaxPoise)
+    {
+        Poise = FMath::Min(MaxPoise, Poise + PoiseRecoveryPerSecond * DeltaSeconds);
+    }
+
     if (Now < StaggeredUntilTime)
     {
+        bAttackCommitted = false;
+        CommittedAttackTarget.Reset();
         if (Movement) { Movement->StopMovementImmediately(); }
+        return;
+    }
+
+    if (ResolveCommittedAttack(Now))
+    {
         return;
     }
 
@@ -235,8 +331,19 @@ void ANWEnemy::Tick(float DeltaSeconds)
 
     if ((Now - LastAttackTime) >= AttackCooldown)
     {
-        LastAttackTime = Now;
-        UGameplayStatics::ApplyDamage(Target, AttackDamage, GetController(), this, UDamageType::StaticClass());
+        bool bCanAttack = true;
+        if (UNWCombatDirectorSubsystem* Director = GetWorld()->GetSubsystem<UNWCombatDirectorSubsystem>())
+        {
+            bCanAttack = Director->RequestAttackPermit(this, Target, bWorldBoss);
+        }
+
+        if (bCanAttack)
+        {
+            bAttackCommitted = true;
+            CommittedAttackTarget = Target;
+            AttackResolveTime = Now + AttackWindupSeconds;
+            UE_LOG(LogTemp, Verbose, TEXT("[AI-COMBAT] %s iniciou telegraph de %.2fs."), *GetDisplayName(), AttackWindupSeconds);
+        }
     }
 }
 
@@ -252,14 +359,23 @@ float ANWEnemy::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, 
     Health = FMath::Clamp(Health - AppliedDamage, 0.0f, MaxHealth);
     RefreshHealthBar();
 
-    const float StaggerThreshold = bWorldBoss ? 0.14f : 0.28f;
-    if (AppliedDamage >= MaxHealth * StaggerThreshold && Health > 0.0f)
+    if (Health > 0.0f)
     {
-        ApplyStagger(bWorldBoss ? 0.16f : 0.30f);
+        LastPoiseDamageTime = GetWorld() ? GetWorld()->GetTimeSeconds() : LastPoiseDamageTime;
+        const float ImpactMultiplier = bWorldBoss ? 0.70f : 1.0f;
+        const float PoiseDamage = FMath::Max(6.0f, AppliedDamage * 1.35f) * ImpactMultiplier;
+        Poise = FMath::Max(0.0f, Poise - PoiseDamage);
+
+        if (Poise <= KINDA_SMALL_NUMBER)
+        {
+            Poise = MaxPoise;
+            ApplyStagger(bWorldBoss ? 0.42f : 0.72f);
+            UE_LOG(LogTemp, Display, TEXT("[POISE] %s teve postura quebrada."), *GetDisplayName());
+        }
     }
 
-    UE_LOG(LogTemp, Display, TEXT("[MOB-HP] %s recebeu %.1f | %.0f/%.0f (%.0f%%)"),
-        *GetDisplayName(), AppliedDamage, Health, MaxHealth, GetHealthRatio() * 100.0f);
+    UE_LOG(LogTemp, Display, TEXT("[MOB-HP] %s recebeu %.1f | %.0f/%.0f (%.0f%%) | poise %.0f/%.0f"),
+        *GetDisplayName(), AppliedDamage, Health, MaxHealth, GetHealthRatio() * 100.0f, Poise, MaxPoise);
 
     if (Health <= 0.0f)
     {
@@ -274,7 +390,9 @@ float ANWEnemy::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, 
 void ANWEnemy::ApplyStagger(float DurationSeconds)
 {
     if (!HasAuthority() || !GetWorld()) { return; }
-    const float Resistance = bWorldBoss ? 0.45f : 1.0f;
+    bAttackCommitted = false;
+    CommittedAttackTarget.Reset();
+    const float Resistance = bWorldBoss ? 0.55f : 1.0f;
     StaggeredUntilTime = FMath::Max(StaggeredUntilTime, GetWorld()->GetTimeSeconds() + FMath::Max(0.08f, DurationSeconds * Resistance));
     if (GetCharacterMovement()) { GetCharacterMovement()->StopMovementImmediately(); }
 }
@@ -367,6 +485,7 @@ void ANWEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetime
 {
     Super::GetLifetimeReplicatedProps(OutLifetimeProps);
     DOREPLIFETIME(ANWEnemy, Health);
+    DOREPLIFETIME(ANWEnemy, Poise);
     DOREPLIFETIME(ANWEnemy, EnemyArchetype);
     DOREPLIFETIME(ANWEnemy, bWorldBoss);
     DOREPLIFETIME(ANWEnemy, BossTier);
@@ -419,7 +538,11 @@ AActor* ANWEnemy::FindBestTarget() const
         const float Distance = FVector::Dist2D(GetActorLocation(), Pawn->GetActorLocation());
         if (Distance <= PlayerAggroRange)
         {
-            const float Score = Distance * (bWorldBoss ? 0.35f : 0.55f);
+            float Score = Distance * (bWorldBoss ? 0.35f : 0.55f);
+            if (CachedTarget.Get() == Pawn)
+            {
+                Score *= 0.78f;
+            }
             if (Score < BestScore)
             {
                 BestScore = Score;
