@@ -15,8 +15,8 @@ ANWCivilian::ANWCivilian()
     PrimaryActorTick.TickInterval = 0.20f;
     bReplicates = true;
     SetReplicateMovement(true);
-    NetUpdateFrequency = 5.0f;
-    MinNetUpdateFrequency = 2.0f;
+    SetNetUpdateFrequency(5.0f);
+    SetMinNetUpdateFrequency(2.0f);
 
     GetCapsuleComponent()->InitCapsuleSize(38.0f, 86.0f);
     GetMesh()->bEnableUpdateRateOptimizations = true;
