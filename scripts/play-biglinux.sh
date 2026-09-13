@@ -81,18 +81,26 @@ if ! git diff --quiet -- Config/DefaultInput.ini; then
     git checkout -- Config/DefaultInput.ini
 fi
 
-# Overrides de Saved/Config podem manter mappings antigos mesmo com o arquivo de
-# projeto correto. Guardamos e retiramos somente Input.ini do playtest.
+# Overrides dentro de Saved/Config sobrevivem entre builds e podem anular tanto
+# input quanto o novo perfil de renderizacao. Guardamos e retiramos apenas arquivos
+# gerados pelo runtime; nenhum asset do Content/ e removido.
 shopt -s nullglob
-for INPUT_OVERRIDE in \
+for CONFIG_OVERRIDE in \
     "$PROJECT_DIR"/Saved/Config/Linux*/Input.ini \
+    "$PROJECT_DIR"/Saved/Config/Linux*/Engine.ini \
+    "$PROJECT_DIR"/Saved/Config/Linux*/Scalability.ini \
+    "$PROJECT_DIR"/Saved/Config/Linux*/GameUserSettings.ini \
     "$PROJECT_DIR"/Saved/Config/LinuxEditor/Input.ini \
-    "$PROJECT_DIR"/Saved/Config/Linux/Input.ini; do
-    [[ -f "$INPUT_OVERRIDE" ]] || continue
+    "$PROJECT_DIR"/Saved/Config/LinuxEditor/Engine.ini \
+    "$PROJECT_DIR"/Saved/Config/LinuxEditor/Scalability.ini \
+    "$PROJECT_DIR"/Saved/Config/LinuxEditor/GameUserSettings.ini; do
+    [[ -f "$CONFIG_OVERRIDE" ]] || continue
     mkdir -p "$BACKUP_DIR"
-    cp -a "$INPUT_OVERRIDE" "$BACKUP_DIR/$(basename "$(dirname "$INPUT_OVERRIDE")")-Input.ini"
-    rm -f "$INPUT_OVERRIDE"
-    echo "[INPUT] Override removido do playtest: $INPUT_OVERRIDE"
+    PARENT_NAME="$(basename "$(dirname "$CONFIG_OVERRIDE")")"
+    FILE_NAME="$(basename "$CONFIG_OVERRIDE")"
+    cp -a "$CONFIG_OVERRIDE" "$BACKUP_DIR/${PARENT_NAME}-${FILE_NAME}"
+    rm -f "$CONFIG_OVERRIDE"
+    echo "[CONFIG] Override runtime removido do playtest: $CONFIG_OVERRIDE"
 done
 shopt -u nullglob
 
@@ -132,8 +140,8 @@ echo "[2/2] Abrindo game direto..."
 if (( PROFILE )); then
     EXEC_CMDS="t.MaxFPS $FPS_LIMIT,stat unit,stat game,stat gpu,stat fps"
 else
-    # Sem stat overlays por padrao. A captura anterior mostrou que eles escondiam
-    # quase toda a tela e ainda adicionavam custo ao teste de jogabilidade.
+    # Sem stat overlays por padrao. O overlay de profiling escondia quase toda a
+    # tela e adicionava trabalho exatamente no teste em que queremos avaliar UX.
     EXEC_CMDS="t.MaxFPS $FPS_LIMIT,stat none"
 fi
 
