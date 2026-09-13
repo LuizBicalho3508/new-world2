@@ -13,6 +13,7 @@
 #include "NWEnemyAnimationDirector.h"
 #include "NWEnemyVisualDirector.h"
 #include "NWGameplaySafetyActor.h"
+#include "NWNvidiaPerformanceDirector.h"
 #include "NWPremiumEnvironmentDirector.h"
 #include "NWPremiumGameplayDirector.h"
 #include "NWPremiumSkyDirector.h"
@@ -70,7 +71,7 @@ namespace
         ReplaceActionMapping(Settings, TEXT("FastTravelConfirm"), { EKeys::Y });
         ReplaceActionMapping(Settings, TEXT("RegenerateWorld"), { EKeys::F10 });
 
-        UE_LOG(LogTemp, Display, TEXT("[INPUT] mappings V4 normalizados: Q/E/R, RMB, Shift, Crouch, 1/2, I; epoch somente F10."));
+        UE_LOG(LogTemp, Display, TEXT("[INPUT] mappings V5 normalizados: Q/E/R, RMB, Shift, Crouch, 1/2, I; epoch somente F10."));
     }
 
     template<typename TActorClass>
@@ -134,13 +135,16 @@ void ANWGameMode::StartPlay()
         SpawnSingletonActor<ANWWorldEventDirector>(World, TEXT("WorldEventDirector"));
         SpawnSingletonActor<ANWGameplaySafetyActor>(World, TEXT("GameplaySafetyActor"));
 
-        // V4: um unico dono de sol/ceu evita que o LightingSafetyActor antigo
-        // reduza novamente a intensidade depois do premium sky.
+        // V5: configura primeiro o caminho NVIDIA. Ele nao possui dependencia
+        // binaria do plugin e so ativa DLSS/Reflex/FG quando os CVars oficiais
+        // estiverem realmente registrados pela plataforma atual.
+        SpawnSingletonActor<ANWNvidiaPerformanceDirector>(World, TEXT("NvidiaPerformanceDirector"));
+
+        // Um unico dono de sol/ceu evita disputa de intensidade.
         SpawnSingletonActor<ANWPremiumSkyDirector>(World, TEXT("PremiumSkyDirector"));
 
-        // Loading gate entra antes dos sistemas visuais pesados. O DDC externo
-        // prepara assets antes do processo e este ator segura o gameplay enquanto
-        // a fila inicial de PSOs/streaming termina.
+        // Loading gate curto: PSOs prioritarios sao preparados antes do controle,
+        // mas o jogo nao fica preso aguardando um DDC fill completo.
         SpawnSingletonActor<ANWStartupWarmupDirector>(World, TEXT("StartupWarmupDirector"));
 
         SpawnSingletonActor<ANWPremiumEnvironmentDirector>(World, TEXT("PremiumEnvironmentDirector"));
@@ -149,7 +153,7 @@ void ANWGameMode::StartPlay()
         SpawnSingletonActor<ANWPremiumGameplayDirector>(World, TEXT("PremiumGameplayDirector"));
         SpawnSingletonActor<ANWPremiumVFXDirector>(World, TEXT("PremiumVFXDirector"));
 
-        UE_LOG(LogTemp, Warning, TEXT("[PREMIUM-V4] bootstrap: loading gate + sol/nuvens/shafts + HUD + mobs sem cloth + free aim + VFX."));
+        UE_LOG(LogTemp, Warning, TEXT("[PREMIUM-V5] bootstrap: fast boot + RTX/DLSS-ready + sol/nuvens/shafts + HUD + mobs sem cloth + VFX."));
     }
 
     Super::StartPlay();
@@ -257,7 +261,7 @@ void ANWGameMode::SpawnPlaytestEncounter()
             static_cast<int32>(Entry.Archetype), *Location.ToCompactString(), Enemy->GetMaxHealth());
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[PLAYTEST] READY | encontro V4 novos=%d | existentes=%d | alvo=%d | HP bar + anti-one-shot + cloth safety"),
+    UE_LOG(LogTemp, Warning, TEXT("[PLAYTEST] READY | encontro V5 novos=%d | existentes=%d | alvo=%d | HP bar + anti-one-shot + cloth safety"),
         Spawned, NearbyRegularEnemies, DesiredNearbyEnemies);
 }
 

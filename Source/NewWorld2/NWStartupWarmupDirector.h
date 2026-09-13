@@ -8,9 +8,10 @@ class APlayerController;
 class UNWStartupLoadingWidget;
 
 /**
- * Loading gate para PSO precache/streaming inicial.
- * Usa o modo Fast do ShaderPipelineCache enquanto a tela de carregamento esta
- * visivel e so libera o controle depois de uma janela sem PSOs pendentes.
+ * Loading gate curto para PSO precache/streaming inicial.
+ * Usa o modo Fast durante a tela de carregamento e depois devolve a compilacao
+ * residual ao modo Background. A V5 evita segurar o usuario por minutos: o gate
+ * tem teto baixo e prioriza abrir o jogo rapidamente.
  */
 UCLASS()
 class NEWORLD2_API ANWStartupWarmupDirector : public AActor
@@ -39,11 +40,11 @@ private:
     bool bInputBlocked = false;
 
     UPROPERTY(EditDefaultsOnly, Category="Startup", meta=(ClampMin="2.0", ClampMax="30.0"))
-    float MinimumLoadingSeconds = 6.0f;
+    float MinimumLoadingSeconds = 4.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="Startup", meta=(ClampMin="0.25", ClampMax="5.0"))
-    float QuietWindowSeconds = 1.25f;
+    float QuietWindowSeconds = 0.75f;
 
-    UPROPERTY(EditDefaultsOnly, Category="Startup", meta=(ClampMin="10.0", ClampMax="120.0"))
-    float MaximumLoadingSeconds = 45.0f;
+    UPROPERTY(EditDefaultsOnly, Category="Startup", meta=(ClampMin="8.0", ClampMax="60.0"))
+    float MaximumLoadingSeconds = 25.0f;
 };

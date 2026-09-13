@@ -24,7 +24,7 @@ void ANWStartupWarmupDirector::BeginPlay()
         return;
     }
 
-    // O HUD V4 nasce junto do gate, mas fica coberto pela tela de carregamento ate
+    // O HUD nasce junto do gate, mas fica coberto pela tela de carregamento ate
     // o warm-up terminar. Assim a camada do player ja esta pronta no primeiro frame jogavel.
     bool bHasHUDDirector = false;
     for (TActorIterator<ANWPremiumHUDDirector> It(GetWorld()); It; ++It)
@@ -43,7 +43,7 @@ void ANWStartupWarmupDirector::BeginPlay()
     LastOutstandingPSOTime = 0.0f;
     EnsureLocalLoadingScreens();
     SetPlayerInputBlocked(true);
-    UE_LOG(LogTemp, Warning, TEXT("[STARTUP-V4] loading gate ativo | ShaderPipelineCache=Fast | minimo=%.1fs | timeout=%.1fs"),
+    UE_LOG(LogTemp, Warning, TEXT("[STARTUP-V5] loading gate curto ativo | ShaderPipelineCache=Fast | minimo=%.1fs | timeout=%.1fs"),
         MinimumLoadingSeconds, MaximumLoadingSeconds);
 }
 
@@ -138,10 +138,10 @@ void ANWStartupWarmupDirector::FinishWarmup(bool bTimedOut)
     }
     LoadingWidgets.Reset();
 
-    UE_LOG(LogTemp, Warning, TEXT("[STARTUP-V4] jogo liberado | tempo=%.1fs | picoPSO=%d | motivo=%s"),
+    UE_LOG(LogTemp, Warning, TEXT("[STARTUP-V5] jogo liberado | tempo=%.1fs | picoPSO=%d | motivo=%s | restante segue em Background"),
         ElapsedSeconds,
         PeakOutstandingPSOs,
-        bTimedOut ? TEXT("timeout-seguro") : TEXT("fila-inicial-pronta"));
+        bTimedOut ? TEXT("timeout-25s") : TEXT("fila-prioritaria-pronta"));
 
     SetActorTickEnabled(false);
 }
