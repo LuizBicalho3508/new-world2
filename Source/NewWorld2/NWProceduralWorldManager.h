@@ -40,6 +40,16 @@ public:
     UFUNCTION(BlueprintPure, Category="World")
     int32 GetWorldEpoch() const { return WorldEpoch; }
 
+    // Mapas gerados em builds anteriores podem ter serializado o antigo valor de
+    // EvolutionIntervalSeconds. O playtest chama isto em runtime para garantir que
+    // nenhum timer legado reconstrua o terreno sozinho enquanto o jogador combate.
+    UFUNCTION(BlueprintCallable, Category="World|Evolution")
+    void DisableAutomaticEvolution()
+    {
+        EvolutionIntervalSeconds = 0.0f;
+        GetWorldTimerManager().ClearTimer(EvolutionTimer);
+    }
+
 protected:
     virtual void BeginPlay() override;
 
