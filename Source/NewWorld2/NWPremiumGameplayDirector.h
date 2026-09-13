@@ -9,16 +9,11 @@ class ANWCharacter;
 class ANWEnemy;
 
 /**
- * Watchdog do vertical slice premium.
+ * Diretor de gameplay do vertical slice premium.
  *
- * Responsabilidades:
- *  - garantir que o HUD nativo exista depois da possessao local;
- *  - observar casts pelas transicoes de cooldown;
- *  - gerar feedback visual deterministico sem Niagara dinamico;
- *  - caso uma habilidade de dano tenha sido aceita mas nao tenha acertado nenhum
- *    inimigo por causa do sweep/camera de terceira pessoa, aplicar aim-assist como
- *    fallback APENAS depois de confirmar que nenhum alvo perdeu vida no cast nativo;
- *  - produzir logs objetivos para o proximo teste.
+ * A mira e action-RPG/free aim: Q/E/R sempre podem ser usados sem target lock.
+ * O ponto de cast vem da camera/crosshair. Soft aim existe somente para absorver
+ * pequenas imprecisoes da terceira pessoa; ele nunca e requisito para disparar.
  */
 UCLASS()
 class NEWORLD2_API ANWPremiumGameplayDirector : public AActor
@@ -46,18 +41,25 @@ private:
         ENWWeaponType Weapon = ENWWeaponType::Greatsword;
         int32 AbilityIndex = 0;
         float ResolveAt = 0.0f;
+        FVector AimPoint = FVector::ZeroVector;
+        FVector AimDirection = FVector::ForwardVector;
         TArray<TWeakObjectPtr<ANWEnemy>> ObservedEnemies;
         TArray<float> HealthRatiosAtCast;
     };
 
+    void EnsurePremiumWorldSystems();
     void EnsureLocalHUDs(float DeltaSeconds);
+    void EnsureTrainingEncounter(float DeltaSeconds);
     void DetectAbilityCasts();
     void ResolvePendingAssists();
     void QueueAbilityAssist(ANWCharacter* Character, ENWWeaponType Weapon, int32 AbilityIndex);
-    void SpawnCastFeedback(ANWCharacter* Character, const FNWWeaponAbilityDefinition& Ability, int32 AbilityIndex);
+    void SpawnCastFeedback(ANWCharacter* Character, ENWWeaponType Weapon, const FNWWeaponAbilityDefinition& Ability, int32 AbilityIndex, const FVector& AimPoint);
     bool NativeCastDamagedEnemy(const FPendingAbilityAssist& Pending) const;
     int32 ApplyFallbackAbilityHit(const FPendingAbilityAssist& Pending);
-    ANWEnemy* FindBestAimTarget(ANWCharacter* Character, float MaxRange) const;
+    ANWEnemy* FindBestAimTarget(ANWCharacter* Character, const FVector& AimPoint, const FVector& AimDirection, float MaxRange, float SoftRadius) const;
+    FVector ResolveFreeAimPoint(ANWCharacter* Character, float MaxRange, FVector& OutAimDirection) const;
+    FVector ClampAimPointToAbilityRange(ANWCharacter* Character, const FVector& AimPoint, float MaxRange, bool bFlattenForMelee) const;
+    bool IsRangedWeapon(ENWWeaponType Weapon) const;
 
     TMap<TWeakObjectPtr<ANWCharacter>, FPlayerCooldownState> PlayerStates;
     TArray<FPendingAbilityAssist> PendingAssists;
@@ -65,14 +67,23 @@ private:
     UPROPERTY(EditDefaultsOnly, Category="Premium|Combat", meta=(ClampMin="0.03", ClampMax="0.40"))
     float AbilityVerificationDelay = 0.12f;
 
-    UPROPERTY(EditDefaultsOnly, Category="Premium|Combat", meta=(ClampMin="1.0", ClampMax="2.5"))
-    float AimAssistRangeMultiplier = 1.45f;
+    UPROPERTY(EditDefaultsOnly, Category="Premium|Combat", meta=(ClampMin="80.0", ClampMax="500.0"))
+    float SoftAimRadius = 220.0f;
 
-    UPROPERTY(EditDefaultsOnly, Category="Premium|Combat", meta=(ClampMin="-1.0", ClampMax="1.0"))
-    float MinimumAimDot = 0.12f;
+    UPROPERTY(EditDefaultsOnly, Category="Premium|Combat", meta=(ClampMin="1000.0", ClampMax="12000.0"))
+    float FreeAimTraceRange = 6500.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="Premium|HUD", meta=(ClampMin="0.10", ClampMax="2.0"))
     float HudEnsureInterval = 0.50f;
 
+    UPROPERTY(EditDefaultsOnly, Category="Premium|Playtest", meta=(ClampMin="3", ClampMax="10"))
+    int32 DesiredNearbyTrainingEnemies = 5;
+
+    UPROPERTY(EditDefaultsOnly, Category="Premium|Playtest", meta=(ClampMin="500.0", ClampMax="3000.0"))
+    float TrainingEncounterRadius = 1750.0f;
+
     float HudAccumulator = 0.0f;
+    float TrainingAccumulator = 0.0f;
+    bool bPremiumWorldSystemsSpawned = false;
+    bool bTrainingEncounterReady = false;
 };
