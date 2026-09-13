@@ -18,7 +18,6 @@ namespace
         return Path.Contains(TEXT("animstarterpack")) ||
             Path.Contains(TEXT("free_magic/demo")) ||
             Path.Contains(TEXT("deformablesnowsystem/demo")) ||
-            Path.Contains(TEXT("/paragonminions/")) ||
             Path.Contains(TEXT("/demo/")) ||
             Path.Contains(TEXT("/preview")) ||
             Path.Contains(TEXT("/tutorial"));
@@ -28,7 +27,6 @@ namespace
 ANWEnemyAnimationDirector::ANWEnemyAnimationDirector()
 {
     PrimaryActorTick.bCanEverTick = true;
-    // 7 Hz e suficiente para locomocao visual e reduz enumeracao/CPU em hordas.
     PrimaryActorTick.TickInterval = 0.14f;
     bReplicates = false;
 }
@@ -38,7 +36,7 @@ void ANWEnemyAnimationDirector::BeginPlay()
     Super::BeginPlay();
     if (GetNetMode() == NM_DedicatedServer) { return; }
     ScanAnimations();
-    UE_LOG(LogTemp, Warning, TEXT("[MOB-ANIM-V4] sequence director ativo | assets=%d | cache por Skeleton | AnimBP de heroi nao usado em AI."), AnimSequenceAssets.Num());
+    UE_LOG(LogTemp, Warning, TEXT("[MOB-ANIM-V7] sequence director ativo | assets=%d | cache por Skeleton | Paragon Minions permitido quando compativel."), AnimSequenceAssets.Num());
 }
 
 void ANWEnemyAnimationDirector::ScanAnimations()
@@ -92,7 +90,7 @@ void ANWEnemyAnimationDirector::EnsureSequences(ANWEnemy* Enemy, FEnemyAnimState
     else
     {
         const TArray<FString> CommonPreferred = {
-            TEXT("Paragon"), TEXT("Creature"), TEXT("Monster"), TEXT("Enemy"), TEXT("Combat")
+            TEXT("Paragon"), TEXT("Minion"), TEXT("Creature"), TEXT("Monster"), TEXT("Enemy"), TEXT("Combat")
         };
 
         FSkeletonAnimSet NewSet;
@@ -112,7 +110,7 @@ void ANWEnemyAnimationDirector::EnsureSequences(ANWEnemy* Enemy, FEnemyAnimState
         State.Attack = NewSet.Attack;
     }
 
-    UE_LOG(LogTemp, Display, TEXT("[MOB-ANIM-V4] %s | idle=%s | run=%s | attack=%s"),
+    UE_LOG(LogTemp, Display, TEXT("[MOB-ANIM-V7] %s | idle=%s | run=%s | attack=%s"),
         *Enemy->GetName(),
         State.Idle.IsValid() ? *State.Idle->GetName() : TEXT("-"),
         State.Run.IsValid() ? *State.Run->GetName() : TEXT("-"),
@@ -214,6 +212,7 @@ int32 ANWEnemyAnimationDirector::ScoreSequence(
     {
         if (Searchable.Contains(Keyword.ToLower())) { Score += 15; }
     }
+    if (Searchable.Contains(TEXT("paragonminions"))) { Score += 25; }
     if (Searchable.Contains(TEXT("montage"))) { Score -= 60; }
     if (Searchable.Contains(TEXT("additive")) || Searchable.Contains(TEXT("upperbody"))) { Score -= 35; }
     return Score;
