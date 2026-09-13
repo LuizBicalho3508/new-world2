@@ -126,18 +126,19 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category="Generation")
     int32 CrystalCount = 40;
 
-    // Perfil para CPU antiga: menos Actors com Tick permanente.
+    // Primeiro playtest: mantemos combate no mundo sem criar dezenas de Characters
+    // antes de o jogador sequer assumir o controle.
     UPROPERTY(EditDefaultsOnly, Category="Generation")
-    int32 AmbientEnemyCount = 14;
+    int32 AmbientEnemyCount = 8;
 
     UPROPERTY(EditDefaultsOnly, Category="Settlements")
-    int32 CiviliansPerSettlement = 4;
+    int32 CiviliansPerSettlement = 3;
 
     UPROPERTY(EditDefaultsOnly, Category="Settlements")
-    int32 InvasionWaveSizePerSettlement = 6;
+    int32 InvasionWaveSizePerSettlement = 3;
 
     UPROPERTY(EditDefaultsOnly, Category="Settlements", meta=(ClampMin="15.0"))
-    float InvasionIntervalSeconds = 75.0f;
+    float InvasionIntervalSeconds = 150.0f;
 
     // Desligado por padrao no playtest. Regeneracao manual fica em F10 para nao
     // reconstruir o piso sob o jogador enquanto testamos locomocao/combate.
