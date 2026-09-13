@@ -105,6 +105,10 @@ void ANWProceduralWorldManager::BeginPlay()
     {
         TryApplyInstalledFreeWorldAssets();
     }
+    else
+    {
+        UE_LOG(LogTemp, Display, TEXT("[VISUAL] modo seguro ativo: mundo usa primitives previsiveis; assets Fab ficam reservados para adapters autorados."));
+    }
 
     ConfigureRuntimePCG();
     BuildWorld();
@@ -324,12 +328,20 @@ void ANWProceduralWorldManager::BuildTerrain()
             const int32 I2 = I0 + VerticesPerSide;
             const int32 I3 = I2 + 1;
 
-            Triangles.Add(I0); Triangles.Add(I1); Triangles.Add(I2);
-            Triangles.Add(I1); Triangles.Add(I3); Triangles.Add(I2);
+            // Unreal considera o winding oposto ao usado aqui anteriormente para a
+            // face visivel do terreno. O antigo 0-1-2 deixava o chao visivel por baixo
+            // e invisivel para o jogador, embora a colisao funcionasse.
+            Triangles.Add(I0); Triangles.Add(I2); Triangles.Add(I1);
+            Triangles.Add(I1); Triangles.Add(I2); Triangles.Add(I3);
         }
     }
 
     TerrainMesh->CreateMeshSection_LinearColor(0, Vertices, Triangles, Normals, UV0, Colors, Tangents, true);
+    TerrainMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+    TerrainMesh->SetCollisionProfileName(TEXT("BlockAll"));
+    TerrainMesh->bUseComplexAsSimpleCollision = true;
+    TerrainMesh->RecreatePhysicsState();
+    UE_LOG(LogTemp, Display, TEXT("[TERRAIN] malha visivel criada: %d vertices | %d triangulos | winding corrigido."), Vertices.Num(), Triangles.Num() / 3);
 }
 
 void ANWProceduralWorldManager::BuildDecorations()

@@ -11,10 +11,10 @@
 #include "NWCharacter.h"
 #include "NWContentPresentationManager.h"
 #include "NWEnemy.h"
-#include "NWFabExpansionPresentationManager.h"
 #include "NWGameplaySafetyActor.h"
 #include "NWLightingSafetyActor.h"
 #include "NWProceduralWorldManager.h"
+#include "NWRealisticContentPresentationManager.h"
 #include "NWWorldEventDirector.h"
 #include "ProceduralMeshComponent.h"
 
@@ -84,8 +84,7 @@ void ANWGameMode::StartPlay()
 
     // O modo -game pode chegar aqui enquanto o Asset Registry ainda esta indexando
     // milhares de arquivos adicionados pelo Fab. Fazemos uma varredura sincrona uma
-    // unica vez ANTES de criar o mundo e os presentation managers. Assim os 6k+
-    // assets instalados realmente entram nos catalogos em vez de aparecer Static=0.
+    // unica vez ANTES de criar o mundo e os presentation managers.
     {
         IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
         const TArray<FString> PathsToScan = { TEXT("/Game") };
@@ -96,8 +95,8 @@ void ANWGameMode::StartPlay()
     ANWProceduralWorldManager* RuntimeWorldManager = EnsureWorldManager();
     if (RuntimeWorldManager)
     {
-        // Garante que mapas gerados com defaults antigos (180s) nao mantenham um
-        // timer serializado que reconstrua o mundo durante o combate.
+        // Garante que mapas gerados com defaults antigos nao mantenham um timer
+        // serializado que reconstrua o terreno durante o combate.
         RuntimeWorldManager->DisableAutomaticEvolution();
     }
 
@@ -156,7 +155,17 @@ void ANWGameMode::StartPlay()
         {
             FActorSpawnParameters Params;
             Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-            GetWorld()->SpawnActor<ANWFabExpansionPresentationManager>(ANWFabExpansionPresentationManager::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+
+            // Primeiro playtest: mantemos personagem, armas, armaduras e selecao de
+            // assets realistas, mas nao instanciamos o expansion manager que tambem
+            // coloca ruinas/estatuas arbitrarias do Fab no mundo. Esses packs precisam
+            // de adapters de escala/pivot por pacote antes de voltarem ao runtime.
+            GetWorld()->SpawnActor<ANWRealisticContentPresentationManager>(
+                ANWRealisticContentPresentationManager::StaticClass(),
+                FVector::ZeroVector,
+                FRotator::ZeroRotator,
+                Params);
+            UE_LOG(LogTemp, Display, TEXT("[VISUAL] presentation manager seguro ativo; decor estatico experimental do Fab desativado."));
         }
     }
 

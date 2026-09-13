@@ -4,13 +4,14 @@ set -Eeuo pipefail
 SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 PROJECT_FILE="$PROJECT_DIR/NewWorld2.uproject"
-GAME_MAP="/Game/GeneratedWorld/NW2_OpenWorld"
+GAME_MAP="/Engine/Maps/Entry?game=/Script/NewWorld2.NWGameMode"
 UE_ROOT="${UE_ROOT:-$HOME/Aplicativos/UnrealEngine-5.8}"
 MAX_PARALLEL_ACTIONS=3
 FPS_LIMIT=45
 RES_X=1920
 RES_Y=1080
 PROFILE=0
+USE_WORLD_PARTITION=0
 
 while (($#)); do
     case "$1" in
@@ -22,12 +23,26 @@ while (($#)); do
             PROFILE=1
             shift
             ;;
+        --world-partition)
+            USE_WORLD_PARTITION=1
+            shift
+            ;;
         --fps)
             FPS_LIMIT="$2"
             shift 2
             ;;
         --max-parallel)
             MAX_PARALLEL_ACTIONS="$2"
+            shift 2
+            ;;
+        --resolution)
+            if [[ "$2" =~ ^([0-9]+)x([0-9]+)$ ]]; then
+                RES_X="${BASH_REMATCH[1]}"
+                RES_Y="${BASH_REMATCH[2]}"
+            else
+                echo "Resolucao invalida: $2. Exemplo: 1920x1080" >&2
+                exit 2
+            fi
             shift 2
             ;;
         *)
@@ -51,17 +66,14 @@ if [[ ! -x "$BUILD_SH" ]]; then
     exit 1
 fi
 
-# O log agora inclui preparacao, compilacao e runtime. Se o terminal fechar, basta
-# mandar `tail -n 300 ~/nw2-playable.log`.
 : > "$LOG_FILE"
 exec > >(tee -a "$LOG_FILE") 2>&1
 
 cd "$PROJECT_DIR"
 git config core.fileMode false || true
 
-# O Editor/Fab pode salvar novamente um DefaultInput.ini antigo. Isso fez R
-# disparar Ability3 e RegenerateWorld ao mesmo tempo, reconstruindo todo o mundo.
-# Guardamos a diferenca para consulta, mas o playtest sempre usa o input versionado.
+# O Editor/Fab pode salvar novamente um DefaultInput.ini antigo. O playtest sempre
+# usa o arquivo versionado; uma eventual diferenca local e guardada para consulta.
 if ! git diff --quiet -- Config/DefaultInput.ini; then
     mkdir -p "$BACKUP_DIR"
     git diff -- Config/DefaultInput.ini > "$BACKUP_DIR/DefaultInput.local.patch"
@@ -69,28 +81,53 @@ if ! git diff --quiet -- Config/DefaultInput.ini; then
     git checkout -- Config/DefaultInput.ini
 fi
 
-# Overrides de Saved/Config tambem podem manter mappings antigos mesmo com o
-# DefaultInput.ini correto. Guardamos e retiramos somente Input.ini do playtest.
+# Overrides dentro de Saved/Config sobrevivem entre builds e podem anular tanto
+# input quanto o novo perfil de renderizacao. Guardamos e retiramos apenas arquivos
+# gerados pelo runtime; nenhum asset do Content/ e removido.
 shopt -s nullglob
-for INPUT_OVERRIDE in \
+for CONFIG_OVERRIDE in \
     "$PROJECT_DIR"/Saved/Config/Linux*/Input.ini \
+    "$PROJECT_DIR"/Saved/Config/Linux*/Engine.ini \
+    "$PROJECT_DIR"/Saved/Config/Linux*/Scalability.ini \
+    "$PROJECT_DIR"/Saved/Config/Linux*/GameUserSettings.ini \
     "$PROJECT_DIR"/Saved/Config/LinuxEditor/Input.ini \
-    "$PROJECT_DIR"/Saved/Config/Linux/Input.ini; do
-    [[ -f "$INPUT_OVERRIDE" ]] || continue
+    "$PROJECT_DIR"/Saved/Config/LinuxEditor/Engine.ini \
+    "$PROJECT_DIR"/Saved/Config/LinuxEditor/Scalability.ini \
+    "$PROJECT_DIR"/Saved/Config/LinuxEditor/GameUserSettings.ini; do
+    [[ -f "$CONFIG_OVERRIDE" ]] || continue
     mkdir -p "$BACKUP_DIR"
-    cp -a "$INPUT_OVERRIDE" "$BACKUP_DIR/$(basename "$(dirname "$INPUT_OVERRIDE")")-Input.ini"
-    rm -f "$INPUT_OVERRIDE"
-    echo "[INPUT] Override removido do playtest: $INPUT_OVERRIDE"
+    PARENT_NAME="$(basename "$(dirname "$CONFIG_OVERRIDE")")"
+    FILE_NAME="$(basename "$CONFIG_OVERRIDE")"
+    cp -a "$CONFIG_OVERRIDE" "$BACKUP_DIR/${PARENT_NAME}-${FILE_NAME}"
+    rm -f "$CONFIG_OVERRIDE"
+    echo "[CONFIG] Override runtime removido do playtest: $CONFIG_OVERRIDE"
 done
 shopt -u nullglob
+
+if (( USE_WORLD_PARTITION )); then
+    WP_SCRIPT="$PROJECT_DIR/scripts/prepare-worldpartition-linux.sh"
+    if [[ -f "$WP_SCRIPT" ]]; then
+        echo "[MAPA] World Partition solicitado explicitamente."
+        if bash "$WP_SCRIPT" --project-root "$PROJECT_DIR" --ue-root "$UE_ROOT"; then
+            if [[ -f "$PROJECT_DIR/Content/GeneratedWorld/NW2_OpenWorld.umap" ]]; then
+                GAME_MAP="/Game/GeneratedWorld/NW2_OpenWorld?game=/Script/NewWorld2.NWGameMode"
+            fi
+        fi
+    fi
+else
+    echo "[MAPA] Modo seguro: /Engine/Maps/Entry + mundo procedural runtime."
+    echo "[MAPA] World Partition fica opt-in com --world-partition ate o mapa autorado estar pronto."
+fi
 
 echo "============================================================"
 echo " NEW WORLD 2 - PLAYABLE BIGLINUX"
 echo "============================================================"
 echo "Projeto : $PROJECT_DIR"
 echo "UE      : $UE_ROOT"
+echo "Mapa    : $GAME_MAP"
 echo "Build   : MaxParallelActions=$MAX_PARALLEL_ACTIONS"
 echo "Video   : ${RES_X}x${RES_Y} Vulkan SM6 @ ${FPS_LIMIT} FPS"
+echo "Profile : $([[ $PROFILE -eq 1 ]] && echo SIM || echo NAO)"
 echo "Log     : $LOG_FILE"
 echo
 
@@ -103,7 +140,9 @@ echo "[2/2] Abrindo game direto..."
 if (( PROFILE )); then
     EXEC_CMDS="t.MaxFPS $FPS_LIMIT,stat unit,stat game,stat gpu,stat fps"
 else
-    EXEC_CMDS="t.MaxFPS $FPS_LIMIT"
+    # Sem stat overlays por padrao. O overlay de profiling escondia quase toda a
+    # tela e adicionava trabalho exatamente no teste em que queremos avaliar UX.
+    EXEC_CMDS="t.MaxFPS $FPS_LIMIT,stat none"
 fi
 
 set +e
