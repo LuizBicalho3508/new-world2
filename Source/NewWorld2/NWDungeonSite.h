@@ -71,11 +71,13 @@ private:
     UPROPERTY(EditAnywhere, Category="Dungeon|Visual")
     bool bUseInstalledDungeonMeshes = false;
 
-    // CPU-saver: dungeons continuam povoadas, mas sem manter dezenas de Characters pensando fora da tela.
-    UPROPERTY(EditAnywhere, Category="Dungeon")
-    int32 RegularEnemyCount = 10;
+    // A formula atual soma Tier*2. Base 3 deixa cada dungeon tier 3 com 9 mobs,
+    // mantendo as duas dungeons, roaming, bosses e encontro inicial dentro do teto
+    // de 42 sem criar 77 atores para imediatamente destruir dezenas deles.
+    UPROPERTY(EditAnywhere, Category="Dungeon", meta=(ClampMin="1", ClampMax="12"))
+    int32 RegularEnemyCount = 3;
 
-    UPROPERTY(EditAnywhere, Category="Dungeon")
+    UPROPERTY(EditAnywhere, Category="Dungeon", meta=(ClampMin="1", ClampMax="4"))
     int32 GuardianCount = 1;
 
     UPROPERTY(Transient)

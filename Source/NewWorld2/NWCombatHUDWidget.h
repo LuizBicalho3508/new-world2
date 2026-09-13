@@ -27,7 +27,7 @@ private:
     void BuildHUD();
     void RefreshHUD();
     void RefreshInventory();
-    UTextBlock* MakeText(const FString& InitialText, int32 FontSize = 16);
+    UTextBlock* MakeText(const FString& InitialText, int32 FontSize);
 
     TWeakObjectPtr<ANWCharacter> ObservedCharacter;
 
@@ -47,6 +47,9 @@ private:
     TObjectPtr<UTextBlock> WeaponText;
 
     UPROPERTY(Transient)
+    TObjectPtr<UTextBlock> StatsText;
+
+    UPROPERTY(Transient)
     TObjectPtr<UTextBlock> StateText;
 
     UPROPERTY(Transient)
@@ -54,6 +57,12 @@ private:
 
     UPROPERTY(Transient)
     TObjectPtr<UTextBlock> LootPromptText;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UTextBlock> CrosshairText;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UTextBlock> HelpText;
 
     UPROPERTY(Transient)
     TObjectPtr<UBorder> InventoryPanel;

@@ -6,6 +6,8 @@
 #include "NWEnemy.generated.h"
 
 class UStaticMeshComponent;
+class UWidgetComponent;
+class UNWEnemyHealthBarWidget;
 
 UCLASS()
 class NEWORLD2_API ANWEnemy : public ACharacter
@@ -25,11 +27,23 @@ public:
     UFUNCTION(BlueprintPure, Category="Combat")
     float GetHealthRatio() const { return MaxHealth > 0.0f ? Health / MaxHealth : 0.0f; }
 
+    UFUNCTION(BlueprintPure, Category="Combat")
+    float GetHealth() const { return Health; }
+
+    UFUNCTION(BlueprintPure, Category="Combat")
+    float GetMaxHealth() const { return MaxHealth; }
+
     UFUNCTION(BlueprintPure, Category="Enemy")
     ENWEnemyArchetype GetEnemyArchetype() const { return EnemyArchetype; }
 
     UFUNCTION(BlueprintPure, Category="Enemy")
     bool IsWorldBoss() const { return bWorldBoss; }
+
+    UFUNCTION(BlueprintPure, Category="Enemy")
+    int32 GetBossTier() const { return BossTier; }
+
+    UFUNCTION(BlueprintPure, Category="Enemy")
+    FString GetDisplayName() const;
 
 protected:
     virtual void BeginPlay() override;
@@ -37,11 +51,14 @@ protected:
     UPROPERTY(VisibleAnywhere, Category="Visual")
     TObjectPtr<UStaticMeshComponent> BodyMesh;
 
+    UPROPERTY(VisibleAnywhere, Category="UI")
+    TObjectPtr<UWidgetComponent> HealthBarWidget;
+
     UPROPERTY(EditDefaultsOnly, Category="Combat")
-    float MaxHealth = 70.0f;
+    float MaxHealth = 340.0f;
 
     UPROPERTY(ReplicatedUsing=OnRep_Health, VisibleAnywhere, Category="Combat")
-    float Health = 70.0f;
+    float Health = 340.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="AI")
     float MoveSpeed = 235.0f;
@@ -91,8 +108,8 @@ private:
     void ApplyArchetypeStats();
     void SpawnProceduralLoot(AController* EventInstigator, AActor* DamageCauser);
     void SpawnLootItem(const FNWGeneratedItem& Item, const FVector& Offset);
-    void TryApplyLicensedCreatureVisual();
-    class USkeletalMesh* FindInstalledCreatureMesh(const TArray<FString>& Keywords) const;
+    void BindHealthBar();
+    void RefreshHealthBar();
 
     TWeakObjectPtr<AActor> CachedTarget;
     float NextTargetRefreshTime = -1000.0f;

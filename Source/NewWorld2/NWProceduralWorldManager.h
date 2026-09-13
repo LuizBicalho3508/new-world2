@@ -11,6 +11,7 @@ class ANWSettlementCore;
 class UDirectionalLightComponent;
 class UExponentialHeightFogComponent;
 class UHierarchicalInstancedStaticMeshComponent;
+class UMaterialInstanceDynamic;
 class UPCGComponent;
 class UPCGGraphInterface;
 class UProceduralMeshComponent;
@@ -41,9 +42,6 @@ public:
     UFUNCTION(BlueprintPure, Category="World")
     int32 GetWorldEpoch() const { return WorldEpoch; }
 
-    // Mapas gerados em builds anteriores podem ter serializado o antigo valor de
-    // EvolutionIntervalSeconds. O playtest chama isto em runtime para garantir que
-    // nenhum timer legado reconstrua o terreno sozinho enquanto o jogador combate.
     void DisableAutomaticEvolution()
     {
         EvolutionIntervalSeconds = 0.0f;
@@ -89,9 +87,6 @@ protected:
     UPROPERTY(EditAnywhere, Category="PCG")
     bool bEnableRuntimePartitionedPCG = true;
 
-    // Os packs Fab variam muito em pivot, unidade e tamanho. No primeiro playtest
-    // usamos os primitives previsiveis do gerador C++. A descoberta automatica pode
-    // ser reativada depois que cada pack tiver adapter/escala autorados.
     UPROPERTY(EditAnywhere, Category="Visual")
     bool bAutoDiscoverInstalledFreeAssets = false;
 
@@ -116,8 +111,6 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category="Generation")
     float TerrainAmplitude = 900.0f;
 
-    // Quantidades conservadoras para o i7 antigo: ainda ha leitura visual do bioma,
-    // mas sem preencher a cena com centenas de instancias durante o primeiro teste.
     UPROPERTY(EditDefaultsOnly, Category="Generation")
     int32 TreeCount = 160;
 
@@ -130,8 +123,6 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category="Generation")
     int32 CrystalCount = 24;
 
-    // Primeiro playtest: mantemos combate no mundo sem criar dezenas de Characters
-    // antes de o jogador sequer assumir o controle.
     UPROPERTY(EditDefaultsOnly, Category="Generation")
     int32 AmbientEnemyCount = 8;
 
@@ -139,13 +130,11 @@ protected:
     int32 CiviliansPerSettlement = 3;
 
     UPROPERTY(EditDefaultsOnly, Category="Settlements")
-    int32 InvasionWaveSizePerSettlement = 3;
+    int32 InvasionWaveSizePerSettlement = 2;
 
-    UPROPERTY(EditDefaultsOnly, Category="Settlements", meta=(ClampMin="15.0"))
+    UPROPERTY(EditDefaultsOnly, Category="Settlements", meta=(ClampMin="60.0"))
     float InvasionIntervalSeconds = 150.0f;
 
-    // Desligado por padrao no playtest. Regeneracao manual fica em F10 para nao
-    // reconstruir o piso sob o jogador enquanto testamos locomocao/combate.
     UPROPERTY(EditDefaultsOnly, Category="Evolution", meta=(ClampMin="0.0"))
     float EvolutionIntervalSeconds = 0.0f;
 
@@ -168,6 +157,8 @@ private:
     void RelocatePlayersAfterEpoch();
     void ConfigureRuntimePCG();
     void TryApplyInstalledFreeWorldAssets();
+    void ApplySafeFallbackMaterials();
+    UMaterialInstanceDynamic* CreateFallbackMaterial(const FLinearColor& Color, const FName Name);
     UStaticMesh* FindInstalledStaticMesh(const TArray<FName>& Roots, const TArray<FString>& Keywords) const;
 
     float SampleHeight(float X, float Y) const;
@@ -183,6 +174,27 @@ private:
 
     UPROPERTY(Transient)
     TArray<TObjectPtr<ANWSettlementCore>> SpawnedSettlements;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UMaterialInstanceDynamic> TerrainFallbackMaterial;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UMaterialInstanceDynamic> TrunkFallbackMaterial;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UMaterialInstanceDynamic> FoliageFallbackMaterial;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UMaterialInstanceDynamic> RockFallbackMaterial;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UMaterialInstanceDynamic> CrystalFallbackMaterial;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UMaterialInstanceDynamic> BuildingFallbackMaterial;
+
+    UPROPERTY(Transient)
+    TObjectPtr<UMaterialInstanceDynamic> StructureFallbackMaterial;
 
     bool bUsingRealisticTreeMesh = false;
     bool bUsingRealisticBuildingMesh = false;

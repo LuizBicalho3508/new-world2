@@ -24,7 +24,6 @@ class NEWORLD2_API ANWContentPresentationManager : public AActor
 
 public:
     ANWContentPresentationManager();
-
     virtual void Tick(float DeltaSeconds) override;
 
 protected:
@@ -69,6 +68,12 @@ private:
     UNiagaraComponent* EnsureBrutalAura(ANWCharacter* Character, FPlayerVisualState& State) const;
     UPointLightComponent* EnsureBrutalLight(ANWCharacter* Character, FPlayerVisualState& State) const;
 
+    void ConfigureWeaponComponent(ANWCharacter* Character, UStaticMeshComponent* Component, UStaticMesh* Mesh, ENWWeaponType WeaponType, bool bRightHand) const;
+    UStaticMesh* GetFallbackWeaponMesh(ENWWeaponType WeaponType) const;
+    float GetWeaponTargetDimension(ENWWeaponType WeaponType, bool bRightHand) const;
+    float ComputeUniformMeshScale(UStaticMesh* Mesh, float TargetMaxDimension) const;
+    float ComputeSkeletalScale(USkeletalMesh* Mesh, float TargetHeight) const;
+
     FName FindHandSocket(ANWCharacter* Character, bool bRightHand) const;
     FName GetActiveWeaponStyleId(const ANWCharacter* Character) const;
     uint32 BuildArmorSignature(const ANWCharacter* Character) const;
@@ -80,6 +85,16 @@ private:
     int32 ScoreAsset(const FAssetData& Asset, const TArray<FString>& PrimaryKeywords, const TArray<FString>& PreferredKeywords, bool& bPrimaryMatch) const;
     void HideEnemyDebugMeshes(ANWEnemy* Enemy) const;
     void CleanupDeadState();
+
+    // V3: o EnemyVisualDirector e o unico dono do visual de mobs. Isso elimina
+    // a disputa observada no log entre [MOB-VISUAL] e [MONSTRO-VISUAL].
+    UPROPERTY(EditDefaultsOnly, Category="Presentation|Ownership")
+    bool bManageEnemyPresentation = false;
+
+    // Niagara generico do presentation manager continua desativado. A V3 usa o
+    // NWPremiumVFXDirector, que faz curadoria/preload por habilidade.
+    UPROPERTY(EditDefaultsOnly, Category="Presentation|Performance")
+    bool bEnableNiagaraPresentation = false;
 
     TArray<FAssetData> StaticMeshAssets;
     TArray<FAssetData> SkeletalMeshAssets;
