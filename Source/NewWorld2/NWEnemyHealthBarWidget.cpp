@@ -19,7 +19,6 @@ void UNWEnemyHealthBarWidget::NativeConstruct()
 {
     Super::NativeConstruct();
     BuildWidgetTreeIfNeeded();
-    SetVisibility(ESlateVisibility::HitTestInvisible);
     RefreshFromEnemy();
 }
 
@@ -74,9 +73,11 @@ void UNWEnemyHealthBarWidget::RefreshFromEnemy()
     ANWEnemy* Enemy = ObservedEnemy.Get();
     if (!Enemy || !HealthBar || !NameText || !HealthText)
     {
-        if (!Enemy) { SetVisibility(ESlateVisibility::Collapsed); }
+        SetVisibility(ESlateVisibility::Collapsed);
         return;
     }
+
+    SetVisibility(ESlateVisibility::HitTestInvisible);
 
     const float MaxHealth = FMath::Max(1.0f, Enemy->GetMaxHealth());
     const float Health = FMath::Clamp(Enemy->GetHealth(), 0.0f, MaxHealth);
@@ -94,5 +95,6 @@ void UNWEnemyHealthBarWidget::RefreshFromEnemy()
     else
     {
         HealthBar->SetFillColorAndOpacity(FLinearColor(0.84f, 0.055f, 0.045f, 1.0f));
+        NameText->SetColorAndOpacity(FSlateColor(FLinearColor(0.95f, 0.95f, 0.98f, 1.0f)));
     }
 }
