@@ -20,7 +20,6 @@
 #include "NWPremiumHUDDirector.h"
 #include "NWPremiumSkyDirector.h"
 #include "NWPremiumV6CombatDirector.h"
-#include "NWPremiumV6EnvironmentBooster.h"
 #include "NWPremiumV6PlayerDirector.h"
 #include "NWPremiumVFXDirector.h"
 #include "NWProceduralWorldManager.h"
@@ -53,8 +52,6 @@ namespace
         UInputSettings* Settings = UInputSettings::GetInputSettings();
         if (!Settings) return;
 
-        // V6 tambem normaliza AXIS mappings. Hot reloads e configs antigas podiam
-        // deixar A/S/D sem evento enquanto W ainda funcionava.
         ReplaceAxisMapping(Settings, TEXT("MoveForward"), { { EKeys::W, 1.0f }, { EKeys::S, -1.0f } });
         ReplaceAxisMapping(Settings, TEXT("MoveRight"), { { EKeys::D, 1.0f }, { EKeys::A, -1.0f } });
         ReplaceAxisMapping(Settings, TEXT("Turn"), { { EKeys::MouseX, 1.0f } });
@@ -85,7 +82,7 @@ namespace
         ReplaceActionMapping(Settings, TEXT("RegenerateWorld"), { EKeys::F10 });
 
         Settings->ForceRebuildKeymaps();
-        UE_LOG(LogTemp, Warning, TEXT("[INPUT-V6] W/S/A/D + mouse + actions reconstruidos em runtime; fallback de polling tambem ativo."));
+        UE_LOG(LogTemp, Warning, TEXT("[INPUT-V9] W/S/A/D + mouse + acoes normalizados; fallback de locomocao permanece ativo."));
     }
 
     template<typename TActorClass>
@@ -103,14 +100,8 @@ namespace
         FActorSpawnParameters Params;
         Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
         TActorClass* Spawned = World->SpawnActor<TActorClass>(TActorClass::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-        if (Spawned)
-        {
-            UE_LOG(LogTemp, Display, TEXT("[BOOT] %s ativo: %s"), LogTag, *Spawned->GetName());
-        }
-        else
-        {
-            UE_LOG(LogTemp, Error, TEXT("[BOOT] falha ao criar %s."), LogTag);
-        }
+        if (Spawned) UE_LOG(LogTemp, Display, TEXT("[BOOT] %s ativo: %s"), LogTag, *Spawned->GetName());
+        else UE_LOG(LogTemp, Error, TEXT("[BOOT] falha ao criar %s."), LogTag);
         return Spawned;
     }
 }
@@ -143,13 +134,12 @@ void ANWGameMode::StartPlay()
         SpawnSingletonActor<ANWPremiumSkyDirector>(World, TEXT("PremiumSkyDirector"));
         SpawnSingletonActor<ANWStartupWarmupDirector>(World, TEXT("StartupWarmupDirector"));
 
-        SpawnSingletonActor<ANWPremiumEnvironmentDirector>(World, TEXT("PremiumEnvironmentDirector"));
-        SpawnSingletonActor<ANWPremiumV6EnvironmentBooster>(World, TEXT("PremiumV6EnvironmentBooster"));
+        // V9 uses one art-directed HISM layer. The old V6 booster used to add
+        // another 2,980 micro instances on top of this and doubled the visual/noise cost.
+        SpawnSingletonActor<ANWPremiumEnvironmentDirector>(World, TEXT("PremiumEnvironmentDirectorV9"));
         SpawnSingletonActor<ANWEnemyVisualDirector>(World, TEXT("EnemyVisualDirector"));
         SpawnSingletonActor<ANWEnemyAnimationDirector>(World, TEXT("EnemyAnimationDirector"));
 
-        // PlayerDirector vem antes do visual para mover os starters para a bag e
-        // iniciar o personagem visualmente sem overlays equipados.
         SpawnSingletonActor<ANWPremiumV6PlayerDirector>(World, TEXT("PremiumV6PlayerDirector"));
         SpawnSingletonActor<ANWPlayerEquipmentVisualDirector>(World, TEXT("PlayerEquipmentVisualDirector"));
 
@@ -158,7 +148,8 @@ void ANWGameMode::StartPlay()
         SpawnSingletonActor<ANWPremiumVFXDirector>(World, TEXT("PremiumVFXDirector"));
         SpawnSingletonActor<ANWPremiumHUDDirector>(World, TEXT("PremiumHUDDirector"));
 
-        UE_LOG(LogTemp, Warning, TEXT("[PREMIUM-V6] completo: movimento resiliente + bag comparativa + gear visual seguro + 21 skills tematicas + lush world + HUD V6 + RTX V5."));
+        UE_LOG(LogTemp, Warning,
+            TEXT("[PREMIUM-V9] hybrid world: macro fixo + micro HISM + terreno suave/trilhas + gear seguro + 21 skills + HUD limpo."));
     }
 
     Super::StartPlay();
@@ -230,7 +221,7 @@ void ANWGameMode::SpawnPlaytestEncounter()
         ++Spawned;
         UE_LOG(LogTemp, Display, TEXT("[PLAYTEST-MOB] spawn archetype=%d em %s | hp=%.0f"), static_cast<int32>(Entry.Archetype), *Location.ToCompactString(), Enemy->GetMaxHealth());
     }
-    UE_LOG(LogTemp, Warning, TEXT("[PLAYTEST] READY | encontro V6 novos=%d | existentes=%d | alvo=%d | skills/gear/inventory testaveis"), Spawned, NearbyRegularEnemies, DesiredNearbyEnemies);
+    UE_LOG(LogTemp, Warning, TEXT("[PLAYTEST] READY | novos=%d | existentes=%d | alvo=%d | skills/gear/inventory testaveis"), Spawned, NearbyRegularEnemies, DesiredNearbyEnemies);
 }
 
 ANWProceduralWorldManager* ANWGameMode::EnsureWorldManager()
