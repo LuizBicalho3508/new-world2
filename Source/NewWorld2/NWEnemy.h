@@ -103,6 +103,9 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category="Combat")
     float AttackCooldown = 1.15f;
 
+    UPROPERTY(EditDefaultsOnly, Category="Combat")
+    float AttackWindupSeconds = 0.34f;
+
     UPROPERTY(ReplicatedUsing=OnRep_EnemyIdentity, VisibleAnywhere, Category="Enemy")
     ENWEnemyArchetype EnemyArchetype = ENWEnemyArchetype::Brute;
 
@@ -126,10 +129,14 @@ private:
     void SpawnLootItem(const FNWGeneratedItem& Item, const FVector& Offset);
     void BindHealthBar();
     void RefreshHealthBar();
+    bool ResolveCommittedAttack(float Now);
 
     TWeakObjectPtr<AActor> CachedTarget;
+    TWeakObjectPtr<AActor> CommittedAttackTarget;
     float NextTargetRefreshTime = -1000.0f;
     float LastAttackTime = -1000.0f;
+    float AttackResolveTime = -1000.0f;
     float StaggeredUntilTime = -1000.0f;
     float LastPoiseDamageTime = -1000.0f;
+    bool bAttackCommitted = false;
 };
