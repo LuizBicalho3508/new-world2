@@ -4,6 +4,7 @@
 #include "Blueprint/WidgetBlueprintLibrary.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
+#include "GameFramework/DamageType.h"
 #include "GameFramework/PlayerController.h"
 #include "Kismet/GameplayStatics.h"
 #include "NWCharacter.h"
@@ -197,7 +198,6 @@ bool ANWPremiumGameplayDirector::NativeCastDamagedEnemy(const FPendingAbilityAss
         const ANWEnemy* Enemy = Pending.ObservedEnemies[Index].Get();
         if (!IsValid(Enemy))
         {
-            // Destruido durante a janela quase sempre significa dano letal do cast nativo.
             return true;
         }
         if (Enemy->GetHealthRatio() < Pending.HealthRatiosAtCast[Index] - 0.0005f)
@@ -248,8 +248,6 @@ int32 ANWPremiumGameplayDirector::ApplyFallbackAbilityHit(const FPendingAbilityA
         if (Hits >= 8) { break; }
     }
 
-    // Se a area ficou vazia mas havia um alvo valido no cone, garante pelo menos o
-    // alvo principal. Isso evita Q/E parecerem mortos em terceira pessoa.
     if (Hits == 0 && AimTarget)
     {
         UGameplayStatics::ApplyDamage(AimTarget, Ability.Power, InstigatorController, Character, UDamageType::StaticClass());
@@ -283,8 +281,6 @@ ANWEnemy* ANWPremiumGameplayDirector::FindBestAimTarget(ANWCharacter* Character,
         const float Dot = FVector::DotProduct(AimDirection, ToTarget);
         if (Dot < MinimumAimDot) { continue; }
 
-        // Alinhamento pesa mais do que distancia: funciona como aim assist leve,
-        // nao como auto-target em 360 graus.
         const float Score = Dot * 1000.0f - Distance * 0.22f;
         if (Score > BestScore)
         {
