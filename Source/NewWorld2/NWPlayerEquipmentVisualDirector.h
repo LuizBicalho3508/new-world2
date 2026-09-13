@@ -14,8 +14,9 @@ class UStaticMeshComponent;
 
 /**
  * Visual de equipamento do jogador, separado do diretor de mobs.
- * So usa armor modular compativel com o Skeleton atual e rejeita cloth, skins de
- * heroi e assets demo. Isso preserva a correcao do crash GPUSkin/APEXCloth.
+ * Prioriza armor modular com o mesmo Skeleton. Se o pack Fab disponibilizar
+ * somente pecas StaticMesh, usa fallback seguro preso aos bones do personagem.
+ * Cloth e skins arbitrarias continuam bloqueados para preservar estabilidade.
  */
 UCLASS()
 class NEWORLD2_API ANWPlayerEquipmentVisualDirector : public AActor
@@ -39,6 +40,7 @@ private:
         TWeakObjectPtr<UStaticMeshComponent> RightWeapon;
         TWeakObjectPtr<UStaticMeshComponent> LeftWeapon;
         TMap<uint8, TWeakObjectPtr<USkeletalMeshComponent>> ArmorParts;
+        TMap<uint8, TWeakObjectPtr<UStaticMeshComponent>> StaticArmorParts;
     };
 
     void ScanAssets();
@@ -50,11 +52,15 @@ private:
     UStaticMesh* FindWeaponMesh(ENWWeaponType Type, FName StyleId) const;
     UStaticMesh* FindShieldMesh(FName StyleId) const;
     USkeletalMesh* FindArmorMesh(ANWCharacter* Character, const FNWGeneratedItem& Item) const;
+    UStaticMesh* FindStaticArmorMesh(const FNWGeneratedItem& Item) const;
     USkeletalMesh* FindBaseBodyMesh(ANWCharacter* Character) const;
 
     UStaticMeshComponent* EnsureWeaponComponent(ANWCharacter* Character, TWeakObjectPtr<UStaticMeshComponent>& Existing, const FName Name) const;
     USkeletalMeshComponent* EnsureArmorComponent(ANWCharacter* Character, FPlayerGearState& State, ENWEquipmentSlot Slot) const;
+    UStaticMeshComponent* EnsureStaticArmorComponent(ANWCharacter* Character, FPlayerGearState& State, ENWEquipmentSlot Slot) const;
     FName FindHandSocket(ANWCharacter* Character, bool bRight) const;
+    FName FindArmorAttachPoint(ANWCharacter* Character, ENWEquipmentSlot Slot) const;
+    FTransform GetStaticArmorRelativeTransform(ENWEquipmentSlot Slot, UStaticMesh* Mesh) const;
     float ComputeStaticScale(UStaticMesh* Mesh, float TargetDimension) const;
     float WeaponTargetDimension(ENWWeaponType Type, bool bRight) const;
     uint32 BuildArmorSignature(const ANWCharacter* Character) const;
