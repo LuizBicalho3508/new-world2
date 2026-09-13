@@ -82,15 +82,14 @@ Runtime log: $RUNTIME_LOG
 ============================================================
 EOF
 
-# ---------------------------------------------------------------------------
-# 1. PREFLIGHT DE CONTRATO V3
-# ---------------------------------------------------------------------------
 echo
 echo "[1/7] Validando contratos Premium V3..."
 
 required_files=(
     "Source/NewWorld2/NWEnemyHealthBarWidget.h"
     "Source/NewWorld2/NWEnemyHealthBarWidget.cpp"
+    "Source/NewWorld2/NWEnemyAnimationDirector.h"
+    "Source/NewWorld2/NWEnemyAnimationDirector.cpp"
     "Source/NewWorld2/NWPremiumVFXDirector.h"
     "Source/NewWorld2/NWPremiumVFXDirector.cpp"
     "Source/NewWorld2/NWEnemyVisualDirector.cpp"
@@ -104,9 +103,12 @@ for file in "${required_files[@]}"; do
 done
 
 grep -q 'ANWPremiumVFXDirector' Source/NewWorld2/NWGameMode.cpp || fail "PremiumVFXDirector nao ligado ao GameMode"
+grep -q 'ANWEnemyAnimationDirector' Source/NewWorld2/NWGameMode.cpp || fail "EnemyAnimationDirector nao ligado ao GameMode"
 grep -q 'UWidgetComponent' Source/NewWorld2/NWEnemy.cpp || fail "barra flutuante de mob nao esta ligada ao inimigo"
 grep -q 'MaxSingleHitFraction' Source/NewWorld2/NWEnemy.cpp || fail "anti-one-shot nao encontrado"
 grep -q 'MOB-HP' Source/NewWorld2/NWEnemy.cpp || fail "telemetria de HP dos mobs ausente"
+grep -q 'AnimationSingleNode' Source/NewWorld2/NWEnemyVisualDirector.cpp || fail "mobs ainda dependem de AnimBP de heroi"
+grep -q 'MOB-ANIM-V3' Source/NewWorld2/NWEnemyAnimationDirector.cpp || fail "animacao segura dos mobs ausente"
 grep -q 'SetColorParameterValueOnMaterials' Source/NewWorld2/NWEnemyVisualDirector.cpp || fail "variacao visual V3 de mob ausente"
 grep -q 'IsUnsafeRuntimeAssetPath' Source/NewWorld2/NWEnemyVisualDirector.cpp || fail "blacklist de packs demo quebrados ausente"
 grep -q 'free_magic/demo' Source/NewWorld2/NWPremiumVFXDirector.cpp || fail "filtro Free_Magic Demo ausente"
@@ -114,13 +116,14 @@ grep -q 'WarmupCachedSystems' Source/NewWorld2/NWPremiumVFXDirector.cpp || fail 
 grep -q 'LayersPerCast = 3' Source/NewWorld2/NWPremiumVFXDirector.h || fail "camadas premium de VFX nao configuradas"
 grep -q 'SoftAimRadius = 380.0f' Source/NewWorld2/NWPremiumGameplayDirector.h || fail "soft aim V3 nao aplicado"
 grep -q 'r.PSOPrecache.Validation=1' Config/DefaultEngine.ini || fail "validacao PSO V3 ausente"
-grep -q 'ReplaceActionMapping(Settings, TEXT("Crouch")' Source/NewWorld2/NWGameMode.cpp || fail "compatibilidade Crouch do AnimStarterPack ausente"
+grep -q 'r.PSOPrecache.Resources=1' Config/DefaultEngine.ini || fail "resource PSO precache V3 ausente"
+grep -q 'ReplaceActionMapping(Settings, TEXT("Crouch")' Source/NewWorld2/NWGameMode.cpp || fail "compatibilidade Crouch ausente"
+if grep -q 'SpawnSingletonActor<ANWContentPresentationManager>' Source/NewWorld2/NWGameMode.cpp; then
+    fail "presentation manager legado voltou ao boot e pode disputar mobs"
+fi
 
 echo "OK: contratos Premium V3 presentes."
 
-# ---------------------------------------------------------------------------
-# 2. UE 5.8 / VULKAN
-# ---------------------------------------------------------------------------
 echo
 echo "[2/7] Validando Unreal Engine 5.8 e Vulkan..."
 python3 - "$UE_ROOT/Engine/Build/Build.version" <<'PY'
@@ -144,9 +147,6 @@ if command -v vulkaninfo >/dev/null 2>&1; then
     grep -E 'deviceName|driverName|driverInfo|apiVersion' /tmp/nw2-v3-vulkan.txt | head -20 || true
 fi
 
-# ---------------------------------------------------------------------------
-# 3. ISOLAR LOGS / PRESERVAR CACHE
-# ---------------------------------------------------------------------------
 echo
 echo "[3/7] Preparando rodada limpa sem apagar DDC/PSO..."
 if pgrep -af 'UnrealEditor.*NewWorld2' >/dev/null 2>&1; then
@@ -160,12 +160,6 @@ STAMP="$(date +%Y%m%d-%H%M%S)"
 [[ -s "$BUILD_LOG" ]] && cp -a "$BUILD_LOG" "$HOME/nw2-premium-v3-build-$STAMP.log" || true
 : > "$BUILD_LOG"
 
-# Nao removemos DerivedDataCache, shader cache ou Content/Fab. O objetivo e medir
-# se o warm-up/PSO cache reduz o stutter entre a primeira e a segunda abertura.
-
-# ---------------------------------------------------------------------------
-# 4. BUILD REAL
-# ---------------------------------------------------------------------------
 echo
 echo "[4/7] Compilando NewWorld2Editor Premium V3..."
 BUILD_SH="$UE_ROOT/Engine/Build/BatchFiles/Linux/Build.sh"
@@ -182,18 +176,15 @@ if (( BUILD_RC != 0 )); then
     echo "============================================================"
     echo "Exit code: $BUILD_RC"
     echo
-    grep -a -nE '(^|[[:space:]])(error:|fatal error:)|Result: Failed|OtherCompilationError' "$BUILD_LOG" | tail -n 200 || true
+    grep -a -nE '(^|[[:space:]])(error:|fatal error:)|Result: Failed|OtherCompilationError' "$BUILD_LOG" | tail -n 220 || true
     exit "$BUILD_RC"
 fi
 
 echo "OK: build Premium V3 concluido."
 
-# ---------------------------------------------------------------------------
-# 5. PLAYTEST
-# ---------------------------------------------------------------------------
 echo
 echo "[5/7] Abrindo jogo..."
-echo "Primeiros 10-30s podem incluir aquecimento de shaders/PSOs. Depois teste Q/E/R varias vezes."
+echo "Primeiros segundos sao a fase de warm-up/PSO. Depois teste Q/E/R repetidamente contra os 5 mobs proximos."
 PLAY_ARGS=(
     --ue-root "$UE_ROOT"
     --fps "$FPS_LIMIT"
@@ -208,17 +199,11 @@ bash "$PROJECT_DIR/scripts/play-biglinux.sh" "${PLAY_ARGS[@]}"
 GAME_RC=$?
 set -e
 
-# ---------------------------------------------------------------------------
-# 6. DIAGNOSTICO V3
-# ---------------------------------------------------------------------------
 echo
 echo "[6/7] Diagnosticando Premium V3..."
 CHECK_RC=0
 bash "$PROJECT_DIR/scripts/check-premium-v3-log.sh" "$RUNTIME_LOG" || CHECK_RC=$?
 
-# ---------------------------------------------------------------------------
-# 7. RESUMO
-# ---------------------------------------------------------------------------
 echo
 echo "[7/7] Resumo da rodada..."
 cat <<EOF
@@ -234,7 +219,6 @@ Runtime log    : $RUNTIME_LOG
 ============================================================
 EOF
 
-# Ctrl+C/WM pode retornar 130; fatal real e responsabilidade do checker.
 if (( GAME_RC != 0 && GAME_RC != 130 )); then
     echo "Runtime retornou erro real: $GAME_RC"
     tail -n 220 "$RUNTIME_LOG" 2>/dev/null || true
