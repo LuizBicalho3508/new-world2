@@ -4,6 +4,8 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
+#include "GameFramework/InputSettings.h"
+#include "InputCoreTypes.h"
 #include "Kismet/GameplayStatics.h"
 #include "Modules/ModuleManager.h"
 #include "NWCharacter.h"
@@ -15,6 +17,61 @@
 #include "NWWorldEventDirector.h"
 #include "ProceduralMeshComponent.h"
 
+namespace
+{
+    void ReplaceActionMapping(UInputSettings* Settings, const FName ActionName, const TArray<FKey>& Keys)
+    {
+        if (!Settings) { return; }
+
+        TArray<FInputActionKeyMapping> Existing;
+        Settings->GetActionMappingByName(ActionName, Existing);
+        for (const FInputActionKeyMapping& Mapping : Existing)
+        {
+            Settings->RemoveActionMapping(Mapping, false);
+        }
+
+        for (const FKey& Key : Keys)
+        {
+            Settings->AddActionMapping(FInputActionKeyMapping(ActionName, Key), false);
+        }
+    }
+
+    void NormalizePlayableInputMappings()
+    {
+        UInputSettings* Settings = UInputSettings::GetInputSettings();
+        if (!Settings) { return; }
+
+        ReplaceActionMapping(Settings, TEXT("Jump"), { EKeys::SpaceBar });
+        ReplaceActionMapping(Settings, TEXT("Sprint"), { EKeys::LeftShift, EKeys::RightShift });
+        ReplaceActionMapping(Settings, TEXT("Attack"), { EKeys::LeftMouseButton });
+        ReplaceActionMapping(Settings, TEXT("Block"), { EKeys::RightMouseButton });
+        ReplaceActionMapping(Settings, TEXT("Dodge"), { EKeys::LeftAlt });
+        ReplaceActionMapping(Settings, TEXT("Ability1"), { EKeys::Q });
+        ReplaceActionMapping(Settings, TEXT("Ability2"), { EKeys::E });
+        ReplaceActionMapping(Settings, TEXT("Ability3"), { EKeys::R });
+        ReplaceActionMapping(Settings, TEXT("PrimaryWeapon"), { EKeys::One });
+        ReplaceActionMapping(Settings, TEXT("SecondaryWeapon"), { EKeys::Two });
+        ReplaceActionMapping(Settings, TEXT("QuickSwap"), { EKeys::F });
+        ReplaceActionMapping(Settings, TEXT("CyclePrimaryWeapon"), { EKeys::Z });
+        ReplaceActionMapping(Settings, TEXT("CycleSecondaryWeapon"), { EKeys::X });
+        ReplaceActionMapping(Settings, TEXT("CycleArrowElement"), { EKeys::V });
+        ReplaceActionMapping(Settings, TEXT("PickupLoot"), { EKeys::G });
+        ReplaceActionMapping(Settings, TEXT("Inventory"), { EKeys::I });
+        ReplaceActionMapping(Settings, TEXT("InventoryPrev"), { EKeys::Up });
+        ReplaceActionMapping(Settings, TEXT("InventoryNext"), { EKeys::Down });
+        ReplaceActionMapping(Settings, TEXT("InventoryEquip"), { EKeys::Enter });
+        ReplaceActionMapping(Settings, TEXT("FastTravelNext"), { EKeys::T });
+        ReplaceActionMapping(Settings, TEXT("FastTravelConfirm"), { EKeys::Y });
+
+        // R e exclusivamente habilidade 3 no modo jogavel. Regenerar o mundo e uma
+        // acao de debug isolada em F10; isso impede o antigo mapping local de fazer
+        // o mapa inteiro piscar/recarregar quando o jogador usa a skill R.
+        ReplaceActionMapping(Settings, TEXT("RegenerateWorld"), { EKeys::F10 });
+
+        UE_LOG(LogTemp, Display, TEXT("[INPUT] mappings jogaveis normalizados: Q/E/R, RMB, Shift, 1/2, I; epoch somente F10."));
+    }
+}
+
 ANWGameMode::ANWGameMode()
 {
     DefaultPawnClass = ANWCharacter::StaticClass();
@@ -22,6 +79,8 @@ ANWGameMode::ANWGameMode()
 
 void ANWGameMode::StartPlay()
 {
+    NormalizePlayableInputMappings();
+
     // O modo -game pode chegar aqui enquanto o Asset Registry ainda esta indexando
     // milhares de arquivos adicionados pelo Fab. Fazemos uma varredura sincrona uma
     // unica vez ANTES de criar o mundo e os presentation managers. Assim os 6k+
