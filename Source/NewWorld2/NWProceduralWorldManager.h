@@ -127,7 +127,7 @@ protected:
     int32 InvasionWaveSizePerSettlement = 6;
 
     UPROPERTY(EditDefaultsOnly, Category="Settlements", meta=(ClampMin="15.0"))
-    int32 InvasionIntervalSeconds = 75.0f;
+    float InvasionIntervalSeconds = 75.0f;
 
     // Desligado por padrao no playtest. Regeneracao manual fica em F10 para nao
     // reconstruir o piso sob o jogador enquanto testamos locomocao/combate.
