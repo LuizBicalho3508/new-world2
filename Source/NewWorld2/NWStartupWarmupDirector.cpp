@@ -47,7 +47,7 @@ void ANWStartupWarmupDirector::BeginPlay()
     SetPlayerInputBlocked(true);
 
     UE_LOG(LogTemp, Warning,
-        TEXT("[STARTUP-V7] loading gate ativo | PSO=Fast | Niagara=%d | minimo=%.1fs | timeout=%.1fs"),
+        TEXT("[STARTUP-V8] loading gate ativo | PSO=Fast | Niagara=%d | minimo=%.1fs | timeout=%.1fs"),
         CombatNiagaraSystems.Num(), MinimumLoadingSeconds, MaximumLoadingSeconds);
 }
 
@@ -114,14 +114,15 @@ void ANWStartupWarmupDirector::PrimeCombatNiagara()
         return A.Asset.PackageName.LexicalLess(B.Asset.PackageName);
     });
 
-    constexpr int32 MaxWarmupSystems = 16;
+    // V7 tentou 16 sistemas e no editor Linux isso concentrou compilacao demais.
+    // O diretor VFX usa 10 temas prioritarios; aquecemos a mesma ordem de grandeza.
+    constexpr int32 MaxWarmupSystems = 10;
     for (const FScoredNiagara& Entry : Scored)
     {
         if (CombatNiagaraSystems.Num() >= MaxWarmupSystems) { break; }
         UNiagaraSystem* System = Cast<UNiagaraSystem>(Entry.Asset.GetAsset());
         if (!System || CombatNiagaraSystems.Contains(System)) { continue; }
         CombatNiagaraSystems.Add(System);
-        // bFlushRequestCompile=true converts LazyOnDemand work into real startup work.
         System->PollForCompilationComplete(true);
     }
 }
@@ -132,7 +133,12 @@ int32 ANWStartupWarmupDirector::CountPendingCombatNiagara()
     for (UNiagaraSystem* System : CombatNiagaraSystems)
     {
         if (!System) { continue; }
-        if (!System->PollForCompilationComplete(true)) { ++Pending; }
+
+        // PollForCompilationComplete() serve para consumir/atualizar o resultado,
+        // mas seu retorno nao deve ser usado como sinonimo de "ha trabalho pendente".
+        // A V7 fazia isso e mantinha todos os sistemas como pendentes ate o timeout.
+        System->PollForCompilationComplete(true);
+        if (System->HasOutstandingCompilationRequests(true)) { ++Pending; }
     }
     return Pending;
 }
@@ -236,7 +242,7 @@ void ANWStartupWarmupDirector::FinishWarmup(bool bTimedOut)
     LoadingWidgets.Reset();
 
     UE_LOG(LogTemp, Warning,
-        TEXT("[STARTUP-V7] jogo liberado | tempo=%.1fs | picoPSO=%d | picoNiagara=%d | restantePSO=%d | restanteNiagara=%d | motivo=%s"),
+        TEXT("[STARTUP-V8] jogo liberado | tempo=%.1fs | picoPSO=%d | picoNiagara=%d | restantePSO=%d | restanteNiagara=%d | motivo=%s"),
         ElapsedSeconds,
         PeakOutstandingPSOs,
         PeakOutstandingNiagara,

@@ -13,10 +13,13 @@ class UStaticMesh;
 class UStaticMeshComponent;
 
 /**
- * Visual de equipamento do jogador, separado do diretor de mobs.
- * Prioriza armor modular com o mesmo Skeleton. Se o pack Fab disponibilizar
- * somente pecas StaticMesh, usa fallback seguro preso aos bones do personagem.
- * Cloth e skins arbitrarias continuam bloqueados para preservar estabilidade.
+ * Premium V8 player presentation.
+ *
+ * O personagem deixa de depender visualmente do Greystone como corpo definitivo:
+ * quando Manny/UEFN Mannequin ou um underlayer neutro compativel esta instalado,
+ * ele vira o corpo-base. Armaduras skeletal da mesma familia de bones passam a
+ * vestir o corpo via Leader Pose. StaticMesh fica restrito a fallback seguro
+ * (principalmente capacete), evitando peitoral/pernas flutuando no personagem.
  */
 UCLASS()
 class NEWORLD2_API ANWPlayerEquipmentVisualDirector : public AActor
@@ -37,6 +40,9 @@ private:
         FName LastWeaponStyle = NAME_None;
         uint32 LastArmorSignature = 0;
         bool bInitialized = false;
+        bool bBaseResolved = false;
+        bool bNeutralBaseActive = false;
+        FString BaseMeshPath;
         TWeakObjectPtr<UStaticMeshComponent> RightWeapon;
         TWeakObjectPtr<UStaticMeshComponent> LeftWeapon;
         TMap<uint8, TWeakObjectPtr<USkeletalMeshComponent>> ArmorParts;
@@ -46,6 +52,7 @@ private:
     void ScanAssets();
     void UpdatePlayers();
     void UpdatePlayer(ANWCharacter* Character, FPlayerGearState& State);
+    void ResolveNeutralBase(ANWCharacter* Character, FPlayerGearState& State);
     void UpdateWeapon(ANWCharacter* Character, FPlayerGearState& State);
     void UpdateArmor(ANWCharacter* Character, FPlayerGearState& State);
 
@@ -61,6 +68,7 @@ private:
     FName FindHandSocket(ANWCharacter* Character, bool bRight) const;
     FName FindArmorAttachPoint(ANWCharacter* Character, ENWEquipmentSlot Slot) const;
     FTransform GetStaticArmorRelativeTransform(ENWEquipmentSlot Slot, UStaticMesh* Mesh) const;
+    FTransform GetWeaponRelativeTransform(ENWWeaponType Type, bool bRight, UStaticMesh* Mesh) const;
     float ComputeStaticScale(UStaticMesh* Mesh, float TargetDimension) const;
     float WeaponTargetDimension(ENWWeaponType Type, bool bRight) const;
     uint32 BuildArmorSignature(const ANWCharacter* Character) const;
@@ -70,5 +78,4 @@ private:
     TArray<FAssetData> StaticAssets;
     TArray<FAssetData> SkeletalAssets;
     TMap<TWeakObjectPtr<ANWCharacter>, FPlayerGearState> States;
-    TSet<TWeakObjectPtr<ANWCharacter>> BaseBodyAttempted;
 };

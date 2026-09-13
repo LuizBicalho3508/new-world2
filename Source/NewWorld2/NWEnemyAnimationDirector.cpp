@@ -36,7 +36,7 @@ void ANWEnemyAnimationDirector::BeginPlay()
     Super::BeginPlay();
     if (GetNetMode() == NM_DedicatedServer) { return; }
     ScanAnimations();
-    UE_LOG(LogTemp, Warning, TEXT("[MOB-ANIM-V7] sequence director ativo | assets=%d | cache por Skeleton | Paragon Minions permitido quando compativel."), AnimSequenceAssets.Num());
+    UE_LOG(LogTemp, Warning, TEXT("[MOB-ANIM-V8] sequence director ativo | assets=%d | uma resolucao por Skeleton."), AnimSequenceAssets.Num());
 }
 
 void ANWEnemyAnimationDirector::ScanAnimations()
@@ -76,7 +76,11 @@ void ANWEnemyAnimationDirector::EnsureSequences(ANWEnemy* Enemy, FEnemyAnimState
     if (!Enemy || !Enemy->GetMesh() || !Enemy->GetMesh()->GetSkeletalMeshAsset()) { return; }
     USkeleton* Skeleton = Enemy->GetMesh()->GetSkeletalMeshAsset()->GetSkeleton();
     if (!Skeleton) { return; }
-    if (State.Skeleton == Skeleton && State.Idle.IsValid() && State.Run.IsValid()) { return; }
+
+    // V7 exigia Idle+Run validos para considerar a resolucao concluida. Quando um
+    // pack nao tinha sequences compativeis, o mesmo mob repetia a busca e o log a
+    // cada 0.14 s. V8 considera o Skeleton resolvido mesmo quando o resultado e vazio.
+    if (State.Skeleton == Skeleton) { return; }
 
     State = FEnemyAnimState();
     State.Skeleton = Skeleton;
@@ -86,32 +90,31 @@ void ANWEnemyAnimationDirector::EnsureSequences(ANWEnemy* Enemy, FEnemyAnimState
         State.Idle = Cached->Idle;
         State.Run = Cached->Run;
         State.Attack = Cached->Attack;
-    }
-    else
-    {
-        const TArray<FString> CommonPreferred = {
-            TEXT("Paragon"), TEXT("Minion"), TEXT("Creature"), TEXT("Monster"), TEXT("Enemy"), TEXT("Combat")
-        };
-
-        FSkeletonAnimSet NewSet;
-        NewSet.Idle = FindBestSequence(Skeleton,
-            { TEXT("Idle"), TEXT("Stand") },
-            CommonPreferred);
-        NewSet.Run = FindBestSequence(Skeleton,
-            { TEXT("Run"), TEXT("Jog"), TEXT("Walk") },
-            CommonPreferred);
-        NewSet.Attack = FindBestSequence(Skeleton,
-            { TEXT("Attack"), TEXT("Melee"), TEXT("Primary"), TEXT("Strike"), TEXT("Slash") },
-            CommonPreferred);
-
-        SkeletonCache.Add(Skeleton, NewSet);
-        State.Idle = NewSet.Idle;
-        State.Run = NewSet.Run;
-        State.Attack = NewSet.Attack;
+        return;
     }
 
-    UE_LOG(LogTemp, Display, TEXT("[MOB-ANIM-V7] %s | idle=%s | run=%s | attack=%s"),
-        *Enemy->GetName(),
+    const TArray<FString> CommonPreferred = {
+        TEXT("Paragon"), TEXT("Minion"), TEXT("Creature"), TEXT("Monster"), TEXT("Enemy"), TEXT("Combat")
+    };
+
+    FSkeletonAnimSet NewSet;
+    NewSet.Idle = FindBestSequence(Skeleton,
+        { TEXT("Idle"), TEXT("Stand") },
+        CommonPreferred);
+    NewSet.Run = FindBestSequence(Skeleton,
+        { TEXT("Run"), TEXT("Jog"), TEXT("Walk") },
+        CommonPreferred);
+    NewSet.Attack = FindBestSequence(Skeleton,
+        { TEXT("Attack"), TEXT("Melee"), TEXT("Primary"), TEXT("Strike"), TEXT("Slash") },
+        CommonPreferred);
+
+    SkeletonCache.Add(Skeleton, NewSet);
+    State.Idle = NewSet.Idle;
+    State.Run = NewSet.Run;
+    State.Attack = NewSet.Attack;
+
+    UE_LOG(LogTemp, Display, TEXT("[MOB-ANIM-V8] skeleton=%s | idle=%s | run=%s | attack=%s"),
+        *Skeleton->GetName(),
         State.Idle.IsValid() ? *State.Idle->GetName() : TEXT("-"),
         State.Run.IsValid() ? *State.Run->GetName() : TEXT("-"),
         State.Attack.IsValid() ? *State.Attack->GetName() : TEXT("-"));
