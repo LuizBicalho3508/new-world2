@@ -2,6 +2,7 @@
 
 #include "Components/CapsuleComponent.h"
 #include "Components/StaticMeshComponent.h"
+#include "Components/WidgetComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
@@ -12,6 +13,7 @@
 #include "NWCivilian.h"
 #include "NWCharacter.h"
 #include "NWCombatLibrary.h"
+#include "NWEnemyHealthBarWidget.h"
 #include "NWLootPickup.h"
 #include "NWProceduralWorldManager.h"
 #include "NWSettlementCore.h"
@@ -37,6 +39,16 @@ ANWEnemy::ANWEnemy()
 
     static ConstructorHelpers::FObjectFinder<UStaticMesh> CapsuleMesh(TEXT("/Engine/BasicShapes/Capsule.Capsule"));
     if (CapsuleMesh.Succeeded()) { BodyMesh->SetStaticMesh(CapsuleMesh.Object); }
+
+    HealthBarWidget = CreateDefaultSubobject<UWidgetComponent>(TEXT("EnemyHealthBar"));
+    HealthBarWidget->SetupAttachment(GetCapsuleComponent());
+    HealthBarWidget->SetRelativeLocation(FVector(0.0f, 0.0f, 128.0f));
+    HealthBarWidget->SetWidgetSpace(EWidgetSpace::Screen);
+    HealthBarWidget->SetWidgetClass(UNWEnemyHealthBarWidget::StaticClass());
+    HealthBarWidget->SetDrawSize(FVector2D(240.0f, 62.0f));
+    HealthBarWidget->SetDrawAtDesiredSize(false);
+    HealthBarWidget->SetPivot(FVector2D(0.5f, 0.5f));
+    HealthBarWidget->SetCollisionEnabled(ECollisionEnabled::NoCollision);
 }
 
 void ANWEnemy::BeginPlay()
@@ -50,6 +62,8 @@ void ANWEnemy::BeginPlay()
         GetCharacterMovement()->bUseControllerDesiredRotation = false;
         GetCharacterMovement()->bOrientRotationToMovement = false;
     }
+    BindHealthBar();
+    RefreshHealthBar();
 }
 
 void ANWEnemy::ConfigureEnemy(ENWEnemyArchetype InArchetype, bool bInWorldBoss, int32 InBossTier)
@@ -70,49 +84,59 @@ void ANWEnemy::ConfigureEnemy(ENWEnemyArchetype InArchetype, bool bInWorldBoss, 
         Health = MaxHealth;
         ForceNetUpdate();
     }
+
+    if (HealthBarWidget)
+    {
+        HealthBarWidget->SetRelativeLocation(FVector(0.0f, 0.0f, bWorldBoss ? 185.0f : 128.0f));
+        HealthBarWidget->SetDrawSize(bWorldBoss ? FVector2D(330.0f, 74.0f) : FVector2D(240.0f, 62.0f));
+    }
+    RefreshHealthBar();
 }
 
 void ANWEnemy::ApplyArchetypeStats()
 {
     if (GetCapsuleComponent()) { GetCapsuleComponent()->SetCapsuleSize(42.0f, 88.0f); }
-    PlayerAggroRange = 2100.0f;
+    PlayerAggroRange = 2350.0f;
     WorldTargetRange = 9000.0f;
 
+    // Premium V3: mobs comuns precisam sobreviver o suficiente para o jogador
+    // ler telegraph, barra de vida, esquiva, combo e status. O V2 usava 70-95 HP,
+    // menos que duas habilidades de starter gear.
     switch (EnemyArchetype)
     {
         case ENWEnemyArchetype::Zombie:
-            MaxHealth = 95.0f;
-            MoveSpeed = 175.0f;
-            AttackDamage = 11.0f;
+            MaxHealth = 270.0f;
+            MoveSpeed = 178.0f;
+            AttackDamage = 12.0f;
             AttackCooldown = 1.35f;
-            AttackRange = 165.0f;
+            AttackRange = 170.0f;
             break;
         case ENWEnemyArchetype::Ghost:
-            MaxHealth = 78.0f;
-            MoveSpeed = 285.0f;
-            AttackDamage = 12.0f;
+            MaxHealth = 230.0f;
+            MoveSpeed = 290.0f;
+            AttackDamage = 13.0f;
             AttackCooldown = 1.05f;
-            AttackRange = 195.0f;
+            AttackRange = 200.0f;
             break;
         case ENWEnemyArchetype::Brute:
         default:
-            MaxHealth = 70.0f;
-            MoveSpeed = 235.0f;
-            AttackDamage = 9.0f;
-            AttackCooldown = 1.15f;
-            AttackRange = 175.0f;
+            MaxHealth = 360.0f;
+            MoveSpeed = 225.0f;
+            AttackDamage = 16.0f;
+            AttackCooldown = 1.30f;
+            AttackRange = 185.0f;
             break;
     }
 
     if (bWorldBoss)
     {
-        MaxHealth = 700.0f + BossTier * 170.0f;
-        AttackDamage = 13.0f + BossTier * 2.6f;
-        AttackCooldown = FMath::Max(0.85f, 1.35f - BossTier * 0.05f);
-        AttackRange = 230.0f;
-        MoveSpeed = FMath::Max(190.0f, MoveSpeed * 0.92f);
-        PlayerAggroRange = 4200.0f;
-        WorldTargetRange = 6000.0f;
+        MaxHealth = 2600.0f + BossTier * 520.0f;
+        AttackDamage = 17.0f + BossTier * 2.8f;
+        AttackCooldown = FMath::Max(0.88f, 1.38f - BossTier * 0.045f);
+        AttackRange = 245.0f;
+        MoveSpeed = FMath::Max(185.0f, MoveSpeed * 0.90f);
+        PlayerAggroRange = 4600.0f;
+        WorldTargetRange = 6500.0f;
         if (GetCapsuleComponent()) { GetCapsuleComponent()->SetCapsuleSize(62.0f, 120.0f); }
     }
 
@@ -122,8 +146,16 @@ void ANWEnemy::ApplyArchetypeStats()
 void ANWEnemy::Tick(float DeltaSeconds)
 {
     Super::Tick(DeltaSeconds);
+    if (!GetWorld()) { return; }
 
-    if (!HasAuthority() || !GetWorld()) { return; }
+    const float NearestPlayerDistance = GetNearestPlayerDistance();
+    if (HealthBarWidget)
+    {
+        const float VisibleDistance = bWorldBoss ? 6500.0f : 3000.0f;
+        HealthBarWidget->SetVisibility(NearestPlayerDistance <= VisibleDistance && Health > 0.0f);
+    }
+
+    if (!HasAuthority()) { return; }
 
     UCharacterMovementComponent* Movement = GetCharacterMovement();
     const float Now = GetWorld()->GetTimeSeconds();
@@ -133,7 +165,6 @@ void ANWEnemy::Tick(float DeltaSeconds)
         return;
     }
 
-    const float NearestPlayerDistance = GetNearestPlayerDistance();
     if (!bWorldBoss && NearestPlayerDistance > SleepDistanceFromPlayers)
     {
         PrimaryActorTick.TickInterval = SleepingThinkInterval;
@@ -174,8 +205,6 @@ void ANWEnemy::Tick(float DeltaSeconds)
 
         if (ForwardHit.bBlockingHit)
         {
-            // O prototipo ainda nao depende de navmesh/AIController. Para que arvores e
-            // rochas reais nao congelem a IA, fazemos um steering lateral deterministico.
             const float SideSign = (GetUniqueID() & 1) == 0 ? 1.0f : -1.0f;
             const FVector SideDirection = FVector::CrossProduct(FVector::UpVector, Direction).GetSafeNormal() * SideSign;
             FHitResult SideHit;
@@ -214,18 +243,31 @@ void ANWEnemy::Tick(float DeltaSeconds)
 
 float ANWEnemy::TakeDamage(float DamageAmount, FDamageEvent const& DamageEvent, AController* EventInstigator, AActor* DamageCauser)
 {
-    const float AppliedDamage = Super::TakeDamage(DamageAmount, DamageEvent, EventInstigator, DamageCauser);
-    if (!HasAuthority() || AppliedDamage <= 0.0f) { return AppliedDamage; }
+    if (!HasAuthority() || DamageAmount <= 0.0f) { return 0.0f; }
+
+    // Protecao contra one-shot acidental de um mob inteiro por uma unica aplicacao.
+    // Criticos e builds fortes continuam relevantes, mas o jogador sempre tem tempo
+    // de ler pelo menos uma resposta do inimigo. DoT continua aplicando normalmente.
+    const float MaxSingleHitFraction = bWorldBoss ? 0.14f : 0.46f;
+    const float CappedIncomingDamage = FMath::Min(DamageAmount, MaxHealth * MaxSingleHitFraction);
+    const float AppliedDamage = Super::TakeDamage(CappedIncomingDamage, DamageEvent, EventInstigator, DamageCauser);
+    if (AppliedDamage <= 0.0f) { return AppliedDamage; }
 
     Health = FMath::Clamp(Health - AppliedDamage, 0.0f, MaxHealth);
-    const float StaggerThreshold = bWorldBoss ? 0.18f : 0.34f;
+    RefreshHealthBar();
+
+    const float StaggerThreshold = bWorldBoss ? 0.14f : 0.28f;
     if (AppliedDamage >= MaxHealth * StaggerThreshold && Health > 0.0f)
     {
-        ApplyStagger(bWorldBoss ? 0.18f : 0.28f);
+        ApplyStagger(bWorldBoss ? 0.16f : 0.30f);
     }
+
+    UE_LOG(LogTemp, Display, TEXT("[MOB-HP] %s recebeu %.1f | %.0f/%.0f (%.0f%%)"),
+        *GetDisplayName(), AppliedDamage, Health, MaxHealth, GetHealthRatio() * 100.0f);
 
     if (Health <= 0.0f)
     {
+        if (HealthBarWidget) { HealthBarWidget->SetVisibility(false); }
         SpawnProceduralLoot(EventInstigator, DamageCauser);
         Destroy();
     }
@@ -239,6 +281,44 @@ void ANWEnemy::ApplyStagger(float DurationSeconds)
     const float Resistance = bWorldBoss ? 0.45f : 1.0f;
     StaggeredUntilTime = FMath::Max(StaggeredUntilTime, GetWorld()->GetTimeSeconds() + FMath::Max(0.08f, DurationSeconds * Resistance));
     if (GetCharacterMovement()) { GetCharacterMovement()->StopMovementImmediately(); }
+}
+
+FString ANWEnemy::GetDisplayName() const
+{
+    FString ArchetypeName;
+    switch (EnemyArchetype)
+    {
+        case ENWEnemyArchetype::Zombie: ArchetypeName = TEXT("Morto-Vivo"); break;
+        case ENWEnemyArchetype::Ghost: ArchetypeName = TEXT("Espectro"); break;
+        case ENWEnemyArchetype::Brute:
+        default: ArchetypeName = TEXT("Brutamontes"); break;
+    }
+
+    if (bWorldBoss)
+    {
+        return FString::Printf(TEXT("BOSS T%d - %s"), BossTier, *ArchetypeName);
+    }
+    return ArchetypeName;
+}
+
+void ANWEnemy::BindHealthBar()
+{
+    if (!HealthBarWidget) { return; }
+    HealthBarWidget->InitWidget();
+    if (UNWEnemyHealthBarWidget* Widget = Cast<UNWEnemyHealthBarWidget>(HealthBarWidget->GetUserWidgetObject()))
+    {
+        Widget->SetObservedEnemy(this);
+    }
+}
+
+void ANWEnemy::RefreshHealthBar()
+{
+    if (!HealthBarWidget) { return; }
+    if (UNWEnemyHealthBarWidget* Widget = Cast<UNWEnemyHealthBarWidget>(HealthBarWidget->GetUserWidgetObject()))
+    {
+        Widget->SetObservedEnemy(this);
+        Widget->RefreshFromEnemy();
+    }
 }
 
 void ANWEnemy::SpawnLootItem(const FNWGeneratedItem& Item, const FVector& Offset)
@@ -296,11 +376,20 @@ void ANWEnemy::GetLifetimeReplicatedProps(TArray<FLifetimeProperty>& OutLifetime
     DOREPLIFETIME(ANWEnemy, BossTier);
 }
 
-void ANWEnemy::OnRep_Health() {}
+void ANWEnemy::OnRep_Health()
+{
+    RefreshHealthBar();
+}
 
 void ANWEnemy::OnRep_EnemyIdentity()
 {
     ApplyArchetypeStats();
+    if (HealthBarWidget)
+    {
+        HealthBarWidget->SetRelativeLocation(FVector(0.0f, 0.0f, bWorldBoss ? 185.0f : 128.0f));
+        HealthBarWidget->SetDrawSize(bWorldBoss ? FVector2D(330.0f, 74.0f) : FVector2D(240.0f, 62.0f));
+    }
+    RefreshHealthBar();
 }
 
 float ANWEnemy::GetNearestPlayerDistance() const
