@@ -10,6 +10,7 @@ RESOLUTION=""
 PROFILE=0
 MAX_PARALLEL=3
 LOG_FILE="$HOME/nw2-playable.log"
+BUILD_LOG="$HOME/nw2-premium-build.log"
 
 usage() {
     cat <<'EOF'
@@ -37,7 +38,8 @@ done
 fail() {
     echo
     echo "[FALHA] $*" >&2
-    echo "Log de runtime esperado em: $LOG_FILE" >&2
+    echo "Build log  : $BUILD_LOG" >&2
+    echo "Runtime log: $LOG_FILE" >&2
     exit 1
 }
 
@@ -45,8 +47,6 @@ fail() {
 [[ -x "$UE_ROOT/Engine/Binaries/Linux/UnrealEditor" ]] || fail "UnrealEditor nao encontrado em $UE_ROOT"
 [[ -x "$UE_ROOT/Engine/Build/BatchFiles/Linux/Build.sh" ]] || fail "Build.sh nao encontrado em $UE_ROOT"
 
-# Escolhe uma janela que caiba no desktop sem esconder o terminal. Em monitores
-# menores usa 1280x720; em Full HD/maiores usa 1600x900.
 if [[ -z "$RESOLUTION" ]]; then
     SCREEN_MODE=""
     if command -v xrandr >/dev/null 2>&1; then
@@ -79,6 +79,8 @@ Resolucao  : $RESOLUTION
 FPS        : $FPS_LIMIT
 UBT jobs   : $MAX_PARALLEL
 Profiler   : $([[ $PROFILE -eq 1 ]] && echo SIM || echo NAO)
+Build log  : $BUILD_LOG
+Runtime log: $LOG_FILE
 ============================================================
 EOF
 
@@ -106,6 +108,8 @@ grep -q 'bEnableDynamicPresentationAssets = false' Source/NewWorld2/NWWorldEvent
 grep -q 'bEnableNiagaraPresentation = false' Source/NewWorld2/NWContentPresentationManager.h || fail "Niagara automatico voltou a ser default"
 grep -q 'presentation manager unico ativo' Source/NewWorld2/NWGameMode.cpp || fail "dono visual unico nao confirmado"
 grep -q 'InvasionIntervalSeconds);' Source/NewWorld2/NWProceduralWorldManager.cpp || fail "primeira invasao ainda pode usar delay legado"
+grep -q 'bool IsInventoryVisible() const' Source/NewWorld2/NWCombatHUDWidget.h || fail "contrato do HUD/Bag incompleto: IsInventoryVisible ausente"
+grep -q -- '--skip-build' scripts/play-biglinux.sh || fail "launcher nao suporta build prevalidado"
 
 echo "OK: contratos premium presentes."
 
@@ -135,7 +139,7 @@ if command -v vulkaninfo >/dev/null 2>&1; then
 fi
 
 # ---------------------------------------------------------------------------
-# FECHAR APENAS INSTANCIA DESTE PROJETO
+# FECHAR APENAS INSTANCIA DESTE PROJETO / ISOLAR LOGS
 # ---------------------------------------------------------------------------
 echo
 echo "[3/6] Garantindo runtime limpo..."
@@ -145,10 +149,17 @@ if pgrep -af 'UnrealEditor.*NewWorld2' >/dev/null 2>&1; then
     sleep 2
 fi
 
-# Nao apagamos DerivedDataCache/ShaderPipelineCache: a segunda execucao deve se
-# beneficiar do aquecimento da primeira. Limpamos somente logs temporarios antigos.
 mkdir -p "$PROJECT_DIR/Saved/Logs"
 find "$PROJECT_DIR/Saved/Logs" -maxdepth 1 -type f -name 'NewWorld2-backup-*.log' -mtime +7 -delete 2>/dev/null || true
+
+# Um build que falha antes de abrir o jogo nao pode mostrar o log de uma execucao
+# anterior como se fosse resultado atual. Preservamos o runtime anterior e zeramos
+# os arquivos de diagnostico desta rodada.
+if [[ -s "$LOG_FILE" ]]; then
+    cp -a "$LOG_FILE" "$HOME/nw2-playable.previous.log"
+fi
+: > "$LOG_FILE"
+: > "$BUILD_LOG"
 
 # ---------------------------------------------------------------------------
 # BUILD INCREMENTAL REAL
@@ -156,8 +167,26 @@ find "$PROJECT_DIR/Saved/Logs" -maxdepth 1 -type f -name 'NewWorld2-backup-*.log
 echo
 echo "[4/6] Compilando NewWorld2Editor..."
 BUILD_SH="$UE_ROOT/Engine/Build/BatchFiles/Linux/Build.sh"
+set +e
 nice -n 5 "$BUILD_SH" NewWorld2Editor Linux Development "$PROJECT_FILE" \
-    -WaitMutex -NoHotReloadFromIDE "-MaxParallelActions=$MAX_PARALLEL"
+    -WaitMutex -NoHotReloadFromIDE "-MaxParallelActions=$MAX_PARALLEL" 2>&1 | tee "$BUILD_LOG"
+BUILD_RC=${PIPESTATUS[0]}
+set -e
+
+if (( BUILD_RC != 0 )); then
+    echo
+    echo "============================================================"
+    echo " BUILD FALHOU - O GAME NAO SERA ABERTO"
+    echo "============================================================"
+    echo "Exit code: $BUILD_RC"
+    echo "Build log: $BUILD_LOG"
+    echo
+    echo "Erros relevantes da compilacao:"
+    grep -nE '(^|[[:space:]])(error:|fatal error:)|Result: Failed|OtherCompilationError' "$BUILD_LOG" | tail -n 120 || true
+    echo
+    echo "Observacao: $LOG_FILE foi zerado nesta rodada; mensagens Niagara antigas nao serao confundidas com este build."
+    exit "$BUILD_RC"
+fi
 
 echo "OK: build concluido."
 
@@ -184,7 +213,7 @@ set -e
 # DIAGNOSTICO
 # ---------------------------------------------------------------------------
 echo
-echo "[6/6] Analisando o log..."
+echo "[6/6] Analisando o log desta execucao..."
 CHECK_RC=0
 if [[ -f "$LOG_FILE" ]]; then
     bash "$PROJECT_DIR/scripts/check-playable-log.sh" "$LOG_FILE" || CHECK_RC=$?
@@ -198,16 +227,20 @@ cat <<EOF
 ============================================================
  RESULTADO DO PREMIUM PLAYTEST
 ============================================================
+Build exit code: $BUILD_RC
 Game exit code : $GAME_RC
 Diagnostico    : $CHECK_RC
-Log            : $LOG_FILE
+Build log      : $BUILD_LOG
+Runtime log    : $LOG_FILE
 Commit         : $CURRENT_COMMIT
 ============================================================
 EOF
 
-if (( GAME_RC != 0 )); then
+# Fechar a janela do Unreal pelo WM/terminal pode resultar em 130 no Linux.
+# O checker e o log decidem se houve crash real; nao mascaramos outros retornos.
+if (( GAME_RC != 0 && GAME_RC != 130 )); then
     echo
-    echo "Ultimas 220 linhas do log:"
+    echo "Ultimas 220 linhas do runtime:"
     tail -n 220 "$LOG_FILE" 2>/dev/null || true
     exit "$GAME_RC"
 fi
