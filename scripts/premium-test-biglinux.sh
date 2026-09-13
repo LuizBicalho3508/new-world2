@@ -171,12 +171,10 @@ PLAY_ARGS=(
     --fps "$FPS_LIMIT"
     --resolution "$RESOLUTION"
     --max-parallel "$MAX_PARALLEL"
+    --skip-build
 )
 (( PROFILE )) && PLAY_ARGS+=(--profile)
 
-# play-biglinux.sh faz um Build.sh incremental adicional, que deve retornar muito
-# rapido como up-to-date. Mantemos essa validacao redundante de proposito: o launcher
-# continua seguro quando for usado isoladamente em outra sessao.
 set +e
 bash "$PROJECT_DIR/scripts/play-biglinux.sh" "${PLAY_ARGS[@]}"
 GAME_RC=$?
@@ -214,8 +212,6 @@ if (( GAME_RC != 0 )); then
     exit "$GAME_RC"
 fi
 
-# O jogador normalmente fecha a janela manualmente e o runtime devolve 0. Avisos
-# do checker nao impedem um novo teste, mas ficam destacados para a proxima rodada.
 if (( CHECK_RC >= 2 )); then
     exit "$CHECK_RC"
 fi
