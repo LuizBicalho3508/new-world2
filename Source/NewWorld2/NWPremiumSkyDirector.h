@@ -6,6 +6,7 @@
 
 class UDirectionalLightComponent;
 class UExponentialHeightFogComponent;
+class UPostProcessComponent;
 class USceneComponent;
 class USkyLightComponent;
 class UVolumetricCloudComponent;
@@ -13,9 +14,8 @@ class ANWProceduralWorldManager;
 class ANWWorldEventDirector;
 
 /**
- * Iluminacao V4: sol legivel, light shafts, fog volumetrico e nuvens.
- * Substitui o safety actor antigo para nao haver dois sistemas brigando pela
- * intensidade do sol a cada frame/tick.
+ * V9 lighting: readable sun/sky, restrained volumetric fog and a small global
+ * grade so PBR foliage/terrain keeps color without the overexposed gray V8 look.
  */
 UCLASS()
 class NEWORLD2_API ANWPremiumSkyDirector : public AActor
@@ -33,6 +33,7 @@ private:
     void RefreshReferences();
     void ConfigureClouds();
     void ApplyPremiumLighting();
+    void ConfigureColorGrade();
 
     UPROPERTY(VisibleAnywhere, Category="Sky")
     TObjectPtr<USceneComponent> SceneRoot;
@@ -40,8 +41,12 @@ private:
     UPROPERTY(VisibleAnywhere, Category="Sky")
     TObjectPtr<UVolumetricCloudComponent> VolumetricCloud;
 
+    UPROPERTY(VisibleAnywhere, Category="Sky")
+    TObjectPtr<UPostProcessComponent> PostProcess;
+
     TWeakObjectPtr<ANWProceduralWorldManager> WorldManager;
     TWeakObjectPtr<ANWWorldEventDirector> WorldDirector;
 
     bool bCloudConfigured = false;
+    bool bColorGradeConfigured = false;
 };

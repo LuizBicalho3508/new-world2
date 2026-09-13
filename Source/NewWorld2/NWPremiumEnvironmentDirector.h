@@ -12,11 +12,9 @@ class USceneComponent;
 class UStaticMesh;
 
 /**
- * Diretor visual do ambiente para o vertical slice premium.
- *
- * Ele nao usa cones/cubos como vegetacao. Em vez disso, procura meshes reais
- * instalados em /Game, escolhe apenas candidatos com nomes coerentes com natureza
- * e distribui tudo via HISM para manter o custo de draw calls baixo.
+ * V9 environment layer for the fixed/hybrid vertical slice.
+ * Macro layout comes from NWProceduralWorldManager; this actor adds only
+ * deterministic HISM nature while preserving roads, settlements and spawn space.
  */
 UCLASS()
 class NEWORLD2_API ANWPremiumEnvironmentDirector : public AActor
@@ -34,6 +32,7 @@ private:
     void BuildPremiumEnvironment(ANWProceduralWorldManager* WorldManager);
     void HideLegacyPrototypeDecor(ANWProceduralWorldManager* WorldManager) const;
     void ApplyGroundMaterial(ANWProceduralWorldManager* WorldManager);
+    void PrepareMeshForInstancing(UStaticMesh* Mesh) const;
 
     UStaticMesh* FindBestNatureMesh(
         const TArray<FString>& PrimaryKeywords,
@@ -49,6 +48,7 @@ private:
     float ComputeGroundOffset(UStaticMesh* Mesh, float UniformScale) const;
     FVector EstimateTerrainNormal(ANWProceduralWorldManager* WorldManager, float X, float Y) const;
     bool IsTerrainUsable(ANWProceduralWorldManager* WorldManager, float X, float Y, float MinimumNormalZ = 0.72f) const;
+    bool IsPlacementClear(ANWProceduralWorldManager* WorldManager, float X, float Y, float MaxPathInfluence, float SettlementExtra) const;
     FVector2D RandomPoint(FRandomStream& Random, float HalfExtent, float ClearRadius) const;
 
     UPROPERTY(VisibleAnywhere)

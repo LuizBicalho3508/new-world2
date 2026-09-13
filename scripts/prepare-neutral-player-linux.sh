@@ -5,20 +5,31 @@ SCRIPT_DIR="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_DIR="${PROJECT_DIR:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 UE_ROOT="${UE_ROOT:-$HOME/Aplicativos/UnrealEngine-5.8}"
 CONTENT_DIR="$PROJECT_DIR/Content"
-DEST_DIR="$CONTENT_DIR/Characters/Mannequins"
 
 log() { printf '%s\n' "$*"; }
 
-has_manny() {
-    find "$CONTENT_DIR" -type f \( -iname 'SKM_Manny*.uasset' -o -iname 'SKM_UEFN_Mannequin*.uasset' \) -print -quit 2>/dev/null | grep -q .
+find_neutral_mesh() {
+    find "$CONTENT_DIR" -type f \( -iname 'SKM_Manny*.uasset' -o -iname 'SKM_Quinn*.uasset' -o -iname 'SKM_UEFN_Mannequin*.uasset' \) -print -quit 2>/dev/null || true
 }
 
-has_manny_anim() {
-    find "$CONTENT_DIR" -type f \( -iname 'ABP_Manny.uasset' -o -iname 'ABP_SandboxCharacter.uasset' \) -print -quit 2>/dev/null | grep -q .
+find_neutral_anim() {
+    find "$CONTENT_DIR" -type f \( -iname 'ABP_Manny.uasset' -o -iname 'ABP_Quinn.uasset' -o -iname 'ABP_SandboxCharacter.uasset' \) -print -quit 2>/dev/null || true
+}
+
+has_complete_neutral() {
+    [[ -n "$(find_neutral_mesh)" && -n "$(find_neutral_anim)" ]]
+}
+
+copy_content_subtree() {
+    local source_content="$1"
+    local subtree="$2"
+    [[ -d "$source_content/$subtree" ]] || return 1
+    mkdir -p "$CONTENT_DIR/$(dirname "$subtree")"
+    cp -a "$source_content/$subtree" "$CONTENT_DIR/$(dirname "$subtree")/"
 }
 
 log "============================================================"
-log " NEW WORLD 2 - PREPARAR CORPO NEUTRO V8 / LINUX"
+log " NEW WORLD 2 - PREPARAR AVATAR NEUTRO V9 / LINUX"
 log "============================================================"
 log "Projeto : $PROJECT_DIR"
 log "UE      : $UE_ROOT"
@@ -26,40 +37,45 @@ log
 
 mkdir -p "$CONTENT_DIR"
 
-if has_manny && has_manny_anim; then
-    log "[OK] Manny/UEFN Mannequin e Animation Blueprint ja existem no projeto."
-    find "$CONTENT_DIR" -type f \( -iname 'SKM_Manny*.uasset' -o -iname 'SKM_UEFN_Mannequin*.uasset' -o -iname 'ABP_Manny.uasset' -o -iname 'ABP_SandboxCharacter.uasset' \) -print | head -20
+if has_complete_neutral; then
+    log "[OK] corpo neutro + Animation Blueprint ja existem no projeto."
+    log "Mesh: $(find_neutral_mesh)"
+    log "Anim: $(find_neutral_anim)"
     exit 0
 fi
 
-log "[1/3] Procurando Manny nos templates descompactados da Unreal..."
-SOURCE_MESH=""
-for ROOT in "$UE_ROOT/Templates" "$UE_ROOT/Samples" "$UE_ROOT/FeaturePacks"; do
-    [[ -d "$ROOT" ]] || continue
-    SOURCE_MESH="$(find "$ROOT" -type f \( -iname 'SKM_Manny.uasset' -o -iname 'SKM_Manny_Simple.uasset' \) -print -quit 2>/dev/null || true)"
-    [[ -n "$SOURCE_MESH" ]] && break
-done
-
-if [[ -n "$SOURCE_MESH" ]]; then
-    SOURCE_CONTENT="$(dirname "$SOURCE_MESH")"
-    while [[ "$SOURCE_CONTENT" != "/" && "$(basename "$SOURCE_CONTENT")" != "Content" ]]; do
-        SOURCE_CONTENT="$(dirname "$SOURCE_CONTENT")"
+log "[1/4] Procurando Third Person/Manny descompactado dentro da UE..."
+# Different UE distributions put template content at different nesting levels.
+# Search broadly, then recover the real Content root from each match.
+while IFS= read -r ASSET; do
+    [[ -n "$ASSET" ]] || continue
+    CUR="$(dirname "$ASSET")"
+    CONTENT_ROOT=""
+    while [[ "$CUR" != "/" ]]; do
+        if [[ "$(basename "$CUR")" == "Content" ]]; then CONTENT_ROOT="$CUR"; break; fi
+        CUR="$(dirname "$CUR")"
     done
+    [[ -n "$CONTENT_ROOT" ]] || continue
 
-    if [[ "$(basename "$SOURCE_CONTENT")" == "Content" && -d "$SOURCE_CONTENT/Characters/Mannequins" ]]; then
-        log "Template encontrado: $SOURCE_CONTENT/Characters/Mannequins"
-        mkdir -p "$CONTENT_DIR/Characters"
-        cp -a "$SOURCE_CONTENT/Characters/Mannequins" "$CONTENT_DIR/Characters/"
-        log "[OK] Manny copiado do template local da UE para Content/Characters/Mannequins."
+    if [[ -d "$CONTENT_ROOT/Characters/Mannequins" ]]; then
+        log "Template unpacked: $CONTENT_ROOT/Characters/Mannequins"
+        copy_content_subtree "$CONTENT_ROOT" "Characters/Mannequins" || true
     fi
-fi
+    if [[ -d "$CONTENT_ROOT/ThirdPerson" ]]; then
+        copy_content_subtree "$CONTENT_ROOT" "ThirdPerson" || true
+    fi
+    has_complete_neutral && break
+done < <(find "$UE_ROOT" -type f \( -iname 'SKM_Manny*.uasset' -o -iname 'ABP_Manny.uasset' \) -print 2>/dev/null | head -80)
 
-if has_manny && has_manny_anim; then
+if has_complete_neutral; then
+    log "[OK] Manny/Quinn copiado de template descompactado."
+    log "Mesh: $(find_neutral_mesh)"
+    log "Anim: $(find_neutral_anim)"
     exit 0
 fi
 
 log
-log "[2/3] Procurando Manny dentro de arquivos .upack..."
+log "[2/4] Procurando Manny dentro de .upack/.zip..."
 TMP_PY="$(mktemp)"
 trap 'rm -f "$TMP_PY"' EXIT
 cat > "$TMP_PY" <<'PY'
@@ -68,8 +84,9 @@ import sys
 import zipfile
 
 ue_root, project_root = sys.argv[1:3]
-prefixes = (
-    "Content/Characters/Mannequins/",
+needles = (
+    "content/characters/mannequins/",
+    "content/thirdperson/",
 )
 archives = []
 for base in ("Templates", "FeaturePacks", "Samples"):
@@ -85,17 +102,30 @@ for archive in archives:
     try:
         with zipfile.ZipFile(archive) as zf:
             names = zf.namelist()
-            lower = [n.lower() for n in names]
-            if not any("skm_manny" in n for n in lower):
+            low = [n.replace("\\", "/").lower() for n in names]
+            if not any("skm_manny" in n for n in low):
                 continue
+            if not any("abp_manny" in n or "abp_quinn" in n for n in low):
+                continue
+
             extracted = 0
             for member in names:
                 normalized = member.replace("\\", "/")
-                if not normalized.startswith(prefixes):
+                lowered = normalized.lower()
+                pos = -1
+                for needle in needles:
+                    found = lowered.find(needle)
+                    if found >= 0 and (pos < 0 or found < pos):
+                        pos = found
+                if pos < 0 or normalized.endswith("/"):
                     continue
-                if normalized.endswith("/"):
+
+                # Important V9 fix: FeaturePack archives may prefix members with
+                # TP_ThirdPerson/.../Content/. Strip everything before Content/.
+                relative = normalized[pos:]
+                if not relative.lower().startswith("content/"):
                     continue
-                target = os.path.abspath(os.path.join(project_root, normalized))
+                target = os.path.abspath(os.path.join(project_root, relative))
                 project_abs = os.path.abspath(project_root) + os.sep
                 if not target.startswith(project_abs):
                     continue
@@ -103,9 +133,10 @@ for archive in archives:
                 with zf.open(member) as src, open(target, "wb") as dst:
                     dst.write(src.read())
                 extracted += 1
+
             if extracted:
-                print(f"EXTRACTED={extracted}")
-                print(f"ARCHIVE={archive}")
+                print(f"[V9-NEUTRAL] EXTRACTED={extracted}")
+                print(f"[V9-NEUTRAL] ARCHIVE={archive}")
                 raise SystemExit(0)
     except (zipfile.BadZipFile, OSError):
         continue
@@ -117,29 +148,37 @@ python3 "$TMP_PY" "$UE_ROOT" "$PROJECT_DIR"
 PY_RC=$?
 set -e
 
-if (( PY_RC == 0 )) && has_manny && has_manny_anim; then
-    log "[OK] Manny extraido de pacote de template da UE."
+if (( PY_RC == 0 )) && has_complete_neutral; then
+    log "[OK] Manny/Quinn extraido de Feature Pack com mesh + AnimBP."
+    log "Mesh: $(find_neutral_mesh)"
+    log "Anim: $(find_neutral_anim)"
     exit 0
 fi
 
 log
-log "[3/3] Resultado"
-if has_manny; then
-    log "[PARCIAL] Mesh Manny encontrada, mas o Animation Blueprint esperado nao foi localizado."
-else
-    log "[FALTA] Manny/UEFN Mannequin nao foi encontrado automaticamente nesta instalacao da UE."
+log "[3/4] Verificando Game Animation Sample ja instalado localmente..."
+GAS_MESH="$(find "$CONTENT_DIR" -type f -iname '*UEFN*Mannequin*.uasset' -print -quit 2>/dev/null || true)"
+GAS_ANIM="$(find "$CONTENT_DIR" -type f -iname 'ABP_SandboxCharacter.uasset' -print -quit 2>/dev/null || true)"
+if [[ -n "$GAS_MESH" && -n "$GAS_ANIM" ]]; then
+    log "[OK] Game Animation Sample ja fornece base neutra completa."
+    exit 0
 fi
+
+log
+log "[4/4] Resultado"
+MESH="$(find_neutral_mesh)"
+ANIM="$(find_neutral_anim)"
+[[ -n "$MESH" ]] && log "[PARCIAL] Mesh encontrada: $MESH" || log "[FALTA] Mesh Manny/Quinn/UEFN."
+[[ -n "$ANIM" ]] && log "[PARCIAL] AnimBP encontrado: $ANIM" || log "[FALTA] ABP_Manny/ABP_Quinn/ABP_SandboxCharacter."
 
 cat <<'EOF'
 
-Para o visual modular premium, use UMA destas opcoes gratuitas:
-  1) Unreal Engine -> Add Feature or Content Pack -> Third Person -> Add to Project
-     (isso adiciona Manny/Quinn e ABP_Manny), ou
+A V9 nao vai mascarar este erro usando Greystone como se fosse corpo modular.
+Para completar o avatar gratuito, no Unreal 5.8 use uma das opcoes:
+  1) Add Feature or Content Pack -> Third Person -> Add to Project
   2) Fab -> Game Animation Sample -> Add to Project
-     (isso adiciona UEFN Mannequin + ABP_SandboxCharacter / Motion Matching).
 
-A V8 nao apaga o Greystone. Se o corpo neutro nao existir, ele continua apenas como fallback.
-Assim que Manny/UEFN estiver em Content/, a V8 passa a preferi-lo automaticamente.
+Depois rode novamente o teste V9. Os assets locais continuam ignorados pelo Git.
 EOF
 
 exit 0

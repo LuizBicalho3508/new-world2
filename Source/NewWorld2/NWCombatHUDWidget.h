@@ -29,6 +29,7 @@ private:
     void BuildHUD();
     void RefreshHUD();
     void RefreshInventory(bool bForce = false);
+    void ApplyInventoryFocusMode();
     uint32 BuildInventorySignature(const ANWCharacter* Character) const;
     UTextBlock* MakeText(const FString& InitialText, int32 FontSize);
     UBorder* MakePanel(const FLinearColor& Color, const FMargin& Padding);
@@ -36,6 +37,8 @@ private:
 
     TWeakObjectPtr<ANWCharacter> ObservedCharacter;
 
+    UPROPERTY(Transient) TObjectPtr<UBorder> VitalsPanelRef;
+    UPROPERTY(Transient) TObjectPtr<UBorder> AbilityPanelRef;
     UPROPERTY(Transient) TObjectPtr<UProgressBar> HealthBar;
     UPROPERTY(Transient) TObjectPtr<UProgressBar> StaminaBar;
     UPROPERTY(Transient) TObjectPtr<UTextBlock> HealthText;
