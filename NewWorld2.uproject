@@ -2,7 +2,7 @@
   "FileVersion": 3,
   "EngineAssociation": "5.8",
   "Category": "Games",
-  "Description": "New World 2 - procedural third-person PvPvE action RPG prototype.",
+  "Description": "New World 2 - fixed/hybrid third-person PvPvE action RPG vertical slice.",
   "Modules": [
     {
       "Name": "NewWorld2",
@@ -22,6 +22,11 @@
     {
       "Name": "Niagara",
       "Enabled": true
+    },
+    {
+      "Name": "XRBase",
+      "Enabled": true,
+      "Optional": true
     },
     {
       "Name": "Fab",
