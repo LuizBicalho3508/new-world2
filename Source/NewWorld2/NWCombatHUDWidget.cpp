@@ -98,7 +98,6 @@ void UNWCombatHUDWidget::BuildHUD()
     UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("HUDRootV6"));
     WidgetTree->RootWidget = Root;
 
-    // Vitals compactos: informacao importante sem cobrir a exploracao.
     UBorder* VitalsPanel = MakePanel(FLinearColor(0.015f, 0.020f, 0.026f, 0.88f), FMargin(14.0f, 10.0f));
     UCanvasPanelSlot* VitalsSlot = Root->AddChildToCanvas(VitalsPanel);
     VitalsSlot->SetAnchors(FAnchors(0.0f, 0.0f));
@@ -133,8 +132,6 @@ void UNWCombatHUDWidget::BuildHUD()
     StateText->SetColorAndOpacity(FSlateColor(FLinearColor(0.70f, 0.73f, 0.77f, 1.0f)));
     Vitals->AddChildToVerticalBox(StateText);
 
-    // Barra de skills central, inspirada em action RPG: tecla grande, nome,
-    // descricao curta e cooldown; cor comunica a identidade elemental.
     UBorder* AbilityPanel = MakePanel(FLinearColor(0.010f, 0.014f, 0.020f, 0.90f), FMargin(8.0f));
     UCanvasPanelSlot* AbilitySlot = Root->AddChildToCanvas(AbilityPanel);
     AbilitySlot->SetAnchors(FAnchors(0.5f, 1.0f));
@@ -189,7 +186,6 @@ void UNWCombatHUDWidget::BuildHUD()
     HelpSlot->SetAnchors(FAnchors(1, 1)); HelpSlot->SetAlignment(FVector2D(1, 1));
     HelpSlot->SetPosition(FVector2D(-14, -5)); HelpSlot->SetSize(FVector2D(720, 22));
 
-    // Inventario V6 em duas colunas.
     InventoryPanel = MakePanel(FLinearColor(0.008f, 0.012f, 0.017f, 0.985f), FMargin(18.0f));
     InventoryPanel->SetVisibility(ESlateVisibility::Collapsed);
     UCanvasPanelSlot* InvSlot = Root->AddChildToCanvas(InventoryPanel);
@@ -340,11 +336,10 @@ void UNWCombatHUDWidget::RefreshInventory(bool bForce)
     }
 
     const int32 Selected = FMath::Clamp(Character->GetSelectedInventoryIndex(), 0, Inventory.Num() - 1);
+    int32 SelectedVisualIndex = INDEX_NONE;
     for (int32 Index = 0; Index < Inventory.Num(); ++Index)
     {
         const FNWGeneratedItem& Item = Inventory[Index];
-        if (Item.ItemSeed == 6199) continue; // marcador interno do kit V6
-
         const bool bSelected = Index == Selected;
         const FLinearColor Rarity = NWCombat::RarityColor(Item.Rarity);
         UBorder* Card = MakePanel(
@@ -352,6 +347,7 @@ void UNWCombatHUDWidget::RefreshInventory(bool bForce)
             FMargin(12.0f, 8.0f));
         UVerticalBoxSlot* CardSlot = InventoryItemsBox->AddChildToVerticalBox(Card);
         CardSlot->SetPadding(FMargin(0, 0, 0, 6));
+        if (bSelected) SelectedVisualIndex = InventoryItemsBox->GetChildrenCount() - 1;
 
         UVerticalBox* Body = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
         Card->SetContent(Body);
@@ -374,5 +370,8 @@ void UNWCombatHUDWidget::RefreshInventory(bool bForce)
         Body->AddChildToVerticalBox(Affixes);
     }
 
-    if (InventoryScroll) InventoryScroll->ScrollWidgetIntoView(InventoryItemsBox->GetChildAt(FMath::Clamp(Selected, 0, InventoryItemsBox->GetChildrenCount() - 1)), true, EDescendantScrollDestination::IntoView);
+    if (InventoryScroll && SelectedVisualIndex != INDEX_NONE && InventoryItemsBox->GetChildrenCount() > SelectedVisualIndex)
+    {
+        InventoryScroll->ScrollWidgetIntoView(InventoryItemsBox->GetChildAt(SelectedVisualIndex), true, EDescendantScrollDestination::IntoView, 12.0f);
+    }
 }
