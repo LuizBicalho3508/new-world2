@@ -10,10 +10,10 @@
 ANWLightingSafetyActor::ANWLightingSafetyActor()
 {
     PrimaryActorTick.bCanEverTick = true;
-    // O WorldEventDirector tambem atualiza luz/clima. Executamos no fim do frame
-    // para que a correcao de orientacao do sol seja sempre a ultima escrita e nao
-    // haja alternancia visivel entre duas rotacoes diferentes.
-    PrimaryActorTick.TickInterval = 0.0f;
+    // O WorldEventDirector atualiza ambiente em baixa frequencia. Fazer a mesma
+    // correcao 60 vezes por segundo desperdicava Game/Render Thread no i7 antigo.
+    // 4 Hz mantem sol e skylight coerentes sem disputa perceptivel.
+    PrimaryActorTick.TickInterval = 0.25f;
     PrimaryActorTick.TickGroup = TG_PostUpdateWork;
 }
 
@@ -74,7 +74,6 @@ void ANWLightingSafetyActor::ApplyLightingFix()
     const float DayFactor = FMath::Clamp(FMath::Cos(SolarAngle) * 1.15f + 0.08f, 0.025f, 1.0f);
 
     // 06:00 = horizonte, 12:00 = sol apontando para baixo, 18:00 = horizonte.
-    // O calculo anterior fazia 09:00-12:00 apontar a luz para cima e deixava o terreno preto.
     const float SunPitch = 90.0f - (WorldTimeHours / 24.0f) * 360.0f;
 
     TArray<UDirectionalLightComponent*> Suns;
@@ -87,7 +86,9 @@ void ANWLightingSafetyActor::ApplyLightingFix()
         }
 
         Sun->SetWorldRotation(FRotator(SunPitch, -35.0f, 0.0f));
-        Sun->SetIntensity(FMath::Max(1.25f, 8.0f * DayFactor));
+        // Auto exposure esta desativado no perfil de playtest, portanto usamos
+        // energia mais previsivel para evitar ceu estourado e terreno lavado.
+        Sun->SetIntensity(FMath::Max(0.75f, 4.5f * DayFactor));
         Sun->SetLightColor(DayFactor < 0.30f
             ? FLinearColor(1.0f, 0.50f, 0.30f)
             : FLinearColor(1.0f, 0.94f, 0.82f));
@@ -99,7 +100,7 @@ void ANWLightingSafetyActor::ApplyLightingFix()
     {
         if (Sky)
         {
-            Sky->SetIntensity(FMath::Max(0.35f, 0.18f + DayFactor * 0.82f));
+            Sky->SetIntensity(FMath::Max(0.22f, 0.12f + DayFactor * 0.48f));
         }
     }
 }
