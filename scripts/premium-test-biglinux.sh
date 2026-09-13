@@ -69,7 +69,7 @@ CURRENT_BRANCH="$(git branch --show-current 2>/dev/null || echo sem-branch)"
 
 cat <<EOF
 ============================================================
- NEW WORLD 2 - PREMIUM VERTICAL SLICE / BIGLINUX
+ NEW WORLD 2 - PREMIUM V2 ACTION RPG / BIGLINUX
 ============================================================
 Projeto    : $PROJECT_DIR
 Branch     : $CURRENT_BRANCH
@@ -88,11 +88,19 @@ EOF
 # PRE-FLIGHT DE CONTRATOS CRITICOS
 # ---------------------------------------------------------------------------
 echo
-echo "[1/6] Validando contratos de estabilidade..."
+echo "[1/6] Validando contratos Premium V2..."
 
 required_files=(
     "Source/NewWorld2/NWPremiumGameplayDirector.h"
     "Source/NewWorld2/NWPremiumGameplayDirector.cpp"
+    "Source/NewWorld2/NWPremiumEnvironmentDirector.h"
+    "Source/NewWorld2/NWPremiumEnvironmentDirector.cpp"
+    "Source/NewWorld2/NWEnemyVisualDirector.h"
+    "Source/NewWorld2/NWEnemyVisualDirector.cpp"
+    "Source/NewWorld2/NWActionReticleWidget.h"
+    "Source/NewWorld2/NWActionReticleWidget.cpp"
+    "Source/NewWorld2/NWAbilityFeedbackActor.h"
+    "Source/NewWorld2/NWAbilityFeedbackActor.cpp"
     "Source/NewWorld2/NWContentPresentationManager.cpp"
     "Source/NewWorld2/NWWorldEventDirector.cpp"
     "Source/NewWorld2/NWGameplaySafetyActor.cpp"
@@ -100,18 +108,27 @@ required_files=(
     "scripts/check-playable-log.sh"
 )
 for file in "${required_files[@]}"; do
-    [[ -f "$PROJECT_DIR/$file" ]] || fail "arquivo premium ausente: $file"
+    [[ -f "$PROJECT_DIR/$file" ]] || fail "arquivo Premium V2 ausente: $file"
 done
 
 grep -q 'ANWPremiumGameplayDirector' Source/NewWorld2/NWGameMode.cpp || fail "PremiumGameplayDirector nao esta ligado ao GameMode"
-grep -q 'bEnableDynamicPresentationAssets = false' Source/NewWorld2/NWWorldEventDirector.h || fail "apresentacao dinamica insegura voltou a ser default"
+grep -q 'FREE AIM' Source/NewWorld2/NWPremiumGameplayDirector.cpp || fail "free aim nao esta habilitado no gameplay director"
+grep -q 'ResolveFreeAimPoint' Source/NewWorld2/NWPremiumGameplayDirector.cpp || fail "camera free-aim resolver ausente"
+grep -q 'UNWActionReticleWidget' Source/NewWorld2/NWPremiumGameplayDirector.cpp || fail "reticulo action-RPG nao esta ligado ao gameplay"
+grep -q 'ANWPremiumEnvironmentDirector' Source/NewWorld2/NWPremiumGameplayDirector.cpp || fail "diretor de ambiente realista nao esta ligado ao gameplay"
+grep -q 'ANWEnemyVisualDirector' Source/NewWorld2/NWPremiumGameplayDirector.cpp || fail "diretor visual de mobs nao esta ligado ao gameplay"
+grep -q 'DesiredNearbyTrainingEnemies' Source/NewWorld2/NWPremiumGameplayDirector.h || fail "encontro de teste garantido ausente"
+grep -q 'Megascans' Source/NewWorld2/NWPremiumEnvironmentDirector.cpp || fail "curadoria de natureza realista ausente"
+grep -q 'lowpoly' Source/NewWorld2/NWPremiumEnvironmentDirector.cpp || fail "filtro anti-lowpoly ausente"
+grep -q 'ParagonGreystone' Source/NewWorld2/NWEnemyVisualDirector.cpp || fail "safety de arma duplicada do Greystone ausente"
+grep -q 'bEnableDynamicPresentationAssets = false' Source/NewWorld2/NWWorldEventDirector.h || fail "apresentacao Niagara/audio insegura voltou a ser default"
 grep -q 'bEnableNiagaraPresentation = false' Source/NewWorld2/NWContentPresentationManager.h || fail "Niagara automatico voltou a ser default"
-grep -q 'presentation manager unico ativo' Source/NewWorld2/NWGameMode.cpp || fail "dono visual unico nao confirmado"
+grep -q 'presentation manager unico ativo' Source/NewWorld2/NWGameMode.cpp || fail "dono visual principal nao confirmado"
 grep -q 'InvasionIntervalSeconds);' Source/NewWorld2/NWProceduralWorldManager.cpp || fail "primeira invasao ainda pode usar delay legado"
 grep -q 'bool IsInventoryVisible() const' Source/NewWorld2/NWCombatHUDWidget.h || fail "contrato do HUD/Bag incompleto: IsInventoryVisible ausente"
 grep -q -- '--skip-build' scripts/play-biglinux.sh || fail "launcher nao suporta build prevalidado"
 
-echo "OK: contratos premium presentes."
+echo "OK: contratos Premium V2 presentes."
 
 # ---------------------------------------------------------------------------
 # VALIDACAO UE / VULKAN
@@ -152,9 +169,6 @@ fi
 mkdir -p "$PROJECT_DIR/Saved/Logs"
 find "$PROJECT_DIR/Saved/Logs" -maxdepth 1 -type f -name 'NewWorld2-backup-*.log' -mtime +7 -delete 2>/dev/null || true
 
-# Um build que falha antes de abrir o jogo nao pode mostrar o log de uma execucao
-# anterior como se fosse resultado atual. Preservamos o runtime anterior e zeramos
-# os arquivos de diagnostico desta rodada.
 if [[ -s "$LOG_FILE" ]]; then
     cp -a "$LOG_FILE" "$HOME/nw2-playable.previous.log"
 fi
@@ -182,19 +196,25 @@ if (( BUILD_RC != 0 )); then
     echo "Build log: $BUILD_LOG"
     echo
     echo "Erros relevantes da compilacao:"
-    grep -nE '(^|[[:space:]])(error:|fatal error:)|Result: Failed|OtherCompilationError' "$BUILD_LOG" | tail -n 120 || true
+    grep -a -nE '(^|[[:space:]])(error:|fatal error:)|Result: Failed|OtherCompilationError' "$BUILD_LOG" | tail -n 160 || true
     echo
-    echo "Observacao: $LOG_FILE foi zerado nesta rodada; mensagens Niagara antigas nao serao confundidas com este build."
+    echo "Runtime nao foi aberto nesta rodada; nenhum log antigo sera confundido com este build."
     exit "$BUILD_RC"
 fi
 
 echo "OK: build concluido."
 
+DEPRECATED_COUNT="$(grep -a -c 'deprecated:' "$BUILD_LOG" 2>/dev/null || true)"
+if [[ "$DEPRECATED_COUNT" =~ ^[0-9]+$ ]] && (( DEPRECATED_COUNT > 0 )); then
+    echo "[INFO] Build passou com $DEPRECATED_COUNT warning(s) de API deprecated; nao bloqueiam esta rodada, mas ficaram registrados."
+fi
+
 # ---------------------------------------------------------------------------
 # EXECUCAO VIA LAUNCHER SEGURO
 # ---------------------------------------------------------------------------
 echo
-echo "[5/6] Abrindo o vertical slice premium..."
+echo "[5/6] Abrindo Premium V2..."
+echo "Objetivos desta rodada: reticulo central, Q/E/R free-cast, 5 mobs proximos, ambiente com meshes reais e sem primitives de debug."
 PLAY_ARGS=(
     --ue-root "$UE_ROOT"
     --fps "$FPS_LIMIT"
@@ -225,7 +245,7 @@ fi
 echo
 cat <<EOF
 ============================================================
- RESULTADO DO PREMIUM PLAYTEST
+ RESULTADO DO PREMIUM V2 PLAYTEST
 ============================================================
 Build exit code: $BUILD_RC
 Game exit code : $GAME_RC
@@ -236,8 +256,8 @@ Commit         : $CURRENT_COMMIT
 ============================================================
 EOF
 
-# Fechar a janela do Unreal pelo WM/terminal pode resultar em 130 no Linux.
-# O checker e o log decidem se houve crash real; nao mascaramos outros retornos.
+# Fechar pelo WM ou Ctrl+C pode retornar 130 no Linux. So assinaturas fatais do
+# checker transformam isso em crash real.
 if (( GAME_RC != 0 && GAME_RC != 130 )); then
     echo
     echo "Ultimas 220 linhas do runtime:"
