@@ -16,6 +16,7 @@
 #include "NWLightingSafetyActor.h"
 #include "NWPremiumEnvironmentDirector.h"
 #include "NWPremiumGameplayDirector.h"
+#include "NWPremiumVFXDirector.h"
 #include "NWProceduralWorldManager.h"
 #include "NWWorldEventDirector.h"
 #include "ProceduralMeshComponent.h"
@@ -46,6 +47,7 @@ namespace
 
         ReplaceActionMapping(Settings, TEXT("Jump"), { EKeys::SpaceBar });
         ReplaceActionMapping(Settings, TEXT("Sprint"), { EKeys::LeftShift, EKeys::RightShift });
+        ReplaceActionMapping(Settings, TEXT("Crouch"), { EKeys::C, EKeys::LeftControl });
         ReplaceActionMapping(Settings, TEXT("Attack"), { EKeys::LeftMouseButton });
         ReplaceActionMapping(Settings, TEXT("Block"), { EKeys::RightMouseButton });
         ReplaceActionMapping(Settings, TEXT("Dodge"), { EKeys::LeftAlt });
@@ -67,7 +69,7 @@ namespace
         ReplaceActionMapping(Settings, TEXT("FastTravelConfirm"), { EKeys::Y });
         ReplaceActionMapping(Settings, TEXT("RegenerateWorld"), { EKeys::F10 });
 
-        UE_LOG(LogTemp, Display, TEXT("[INPUT] mappings jogaveis normalizados: Q/E/R, RMB, Shift, 1/2, I; epoch somente F10."));
+        UE_LOG(LogTemp, Display, TEXT("[INPUT] mappings V3 normalizados: Q/E/R, RMB, Shift, Crouch, 1/2, I; epoch somente F10."));
     }
 
     template<typename TActorClass>
@@ -141,18 +143,16 @@ void ANWGameMode::StartPlay()
             if (World->SpawnActor<ANWContentPresentationManager>(
                 ANWContentPresentationManager::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params))
             {
-                UE_LOG(LogTemp, Display, TEXT("[VISUAL] presentation manager unico ativo; sem sobrescritas concorrentes de arma/armadura."));
+                UE_LOG(LogTemp, Display, TEXT("[VISUAL] presentation manager de player/armas ativo; mobs pertencem ao EnemyVisualDirector."));
             }
         }
 
-        // Premium V2: estes dois sistemas ficam explicitamente ligados ao GameMode.
-        // O PremiumGameplayDirector ainda verifica a existencia deles como segunda
-        // barreira de seguranca, mas o boot principal nao depende mais dessa cadeia.
         SpawnSingletonActor<ANWPremiumEnvironmentDirector>(World, TEXT("PremiumEnvironmentDirector"));
         SpawnSingletonActor<ANWEnemyVisualDirector>(World, TEXT("EnemyVisualDirector"));
         SpawnSingletonActor<ANWPremiumGameplayDirector>(World, TEXT("PremiumGameplayDirector"));
+        SpawnSingletonActor<ANWPremiumVFXDirector>(World, TEXT("PremiumVFXDirector"));
 
-        UE_LOG(LogTemp, Warning, TEXT("[PREMIUM-V2] bootstrap completo: ambiente real + mobs reais + free aim + reticulo."));
+        UE_LOG(LogTemp, Warning, TEXT("[PREMIUM-V3] bootstrap completo: ambiente real + HP de mobs + free aim + VFX curado/preaquecido + animacoes estabilizadas."));
     }
 
     Super::StartPlay();
@@ -222,8 +222,6 @@ void ANWGameMode::SpawnPlaytestEncounter()
         FVector2D Offset;
     };
 
-    // Arco frontal em relacao ao spawn/rotacao inicial. Ha variedade suficiente
-    // para validar melee, area damage, free-aim e leitura visual dos arquetipos.
     const FEncounterSpawn Spawns[] = {
         { ENWEnemyArchetype::Zombie, FVector2D(760.0f, -360.0f) },
         { ENWEnemyArchetype::Ghost,  FVector2D(900.0f,  300.0f) },
@@ -258,11 +256,11 @@ void ANWGameMode::SpawnPlaytestEncounter()
         UGameplayStatics::FinishSpawningActor(Enemy, Transform);
         ++Spawned;
 
-        UE_LOG(LogTemp, Display, TEXT("[PLAYTEST-MOB] spawn archetype=%d em %s"),
-            static_cast<int32>(Entry.Archetype), *Location.ToCompactString());
+        UE_LOG(LogTemp, Display, TEXT("[PLAYTEST-MOB] spawn archetype=%d em %s | hp=%.0f"),
+            static_cast<int32>(Entry.Archetype), *Location.ToCompactString(), Enemy->GetMaxHealth());
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[PLAYTEST] READY | encontro inicial novos=%d | existentes=%d | alvo=%d | WASD/Mouse LMB/RMB Q/E/R G I T/Y"),
+    UE_LOG(LogTemp, Warning, TEXT("[PLAYTEST] READY | encontro V3 novos=%d | existentes=%d | alvo=%d | mobs com HP bar + anti-one-shot"),
         Spawned, NearbyRegularEnemies, DesiredNearbyEnemies);
 }
 
