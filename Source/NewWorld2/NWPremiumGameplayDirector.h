@@ -49,7 +49,6 @@ private:
 
     void EnsurePremiumWorldSystems();
     void EnsureLocalHUDs(float DeltaSeconds);
-    void StabilizePlayerWeaponVisual(ANWCharacter* Character) const;
     void EnsureTrainingEncounter(float DeltaSeconds);
     void DetectAbilityCasts();
     void ResolvePendingAssists();
