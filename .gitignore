@@ -39,9 +39,9 @@ Content/GeneratedWorld/
 Content/__ExternalActors__/GeneratedWorld/
 Content/__ExternalObjects__/GeneratedWorld/
 
-# Licensed/free vendor content is installed locally through Fab/Epic and is not redistributed.
-# Keep these local even when the packs are free: their marketplace/Fab licenses do not imply
-# that the original .uasset payload should be committed into this source repository.
+# Licensed/free/vendor/template content is installed locally and is not redistributed.
+# Keep these local even when the packs are free: their marketplace/Fab/template payload
+# should not be committed into this source repository.
 Content/Fab/
 Content/ArrowTrail/
 Content/Free_Magic/
@@ -74,6 +74,10 @@ Content/OpenWorldDemoCollection/
 Content/Open_World_Demo_Collection/
 Content/DeformableSnowSystem/
 Content/ProceduralSeaWaves/
+
+# UE Third Person / Manny copied locally by prepare-neutral-player-linux.sh.
+Content/Characters/Mannequins/
+Content/ThirdPerson/
 
 # Keep authored Unreal content, source, config and docs
 !Content/
