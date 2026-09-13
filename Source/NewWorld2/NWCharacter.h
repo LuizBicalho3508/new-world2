@@ -29,6 +29,16 @@ public:
     bool TryAddInventoryItem(const FNWGeneratedItem& Item);
     void ApplyStagger(float DurationSeconds, AActor* SourceActor = nullptr);
 
+    // Premium V6: API pequena e explicita para os diretores de UX/visual sem
+    // expor os arrays internos para actors externos.
+    void ConfigurePremiumV6StarterLoadout();
+    void PremiumV6StabilizeLocomotion();
+    bool HasEquippedWeaponItem(ENWWeaponType WeaponType) const;
+    float GetInventoryComparisonDelta(int32 InventoryIndex) const;
+    FString GetInventoryComparisonLabel(int32 InventoryIndex) const;
+    void SetSelectedInventoryIndexSafe(int32 NewIndex);
+    void EquipInventoryItemAtIndex(int32 InventoryIndex);
+
     UFUNCTION(BlueprintPure, Category="Combat")
     ENWWeaponType GetActiveWeapon() const { return ActiveWeapon; }
 
