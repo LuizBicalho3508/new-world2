@@ -10,7 +10,10 @@
 ANWLightingSafetyActor::ANWLightingSafetyActor()
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.TickInterval = 0.10f;
+    // O WorldEventDirector tambem atualiza luz/clima. Executamos no fim do frame
+    // para que a correcao de orientacao do sol seja sempre a ultima escrita e nao
+    // haja alternancia visivel entre duas rotacoes diferentes.
+    PrimaryActorTick.TickInterval = 0.0f;
     PrimaryActorTick.TickGroup = TG_PostUpdateWork;
 }
 

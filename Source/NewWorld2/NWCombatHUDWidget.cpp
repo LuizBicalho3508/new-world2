@@ -101,7 +101,7 @@ void UNWCombatHUDWidget::BuildHUD()
     AbilityBorder->SetContent(AbilityRow);
     AbilityTexts.Reset();
 
-    const TCHAR* Keys[3] = { TEXT("Q"), TEXT("E"), TEXT("C") };
+    const TCHAR* Keys[3] = { TEXT("Q"), TEXT("E"), TEXT("R") };
     for (int32 Index = 0; Index < 3; ++Index)
     {
         UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
@@ -182,11 +182,11 @@ void UNWCombatHUDWidget::RefreshHUD()
     {
         State += TEXT(" | METAMORFOSE ATIVA");
     }
-    State += FString::Printf(TEXT("\n[T] Destino: %s   [Y] TELEPORTAR"), *Character->GetSelectedFastTravelLabel());
+    State += FString::Printf(TEXT("\n[T] Destino: %s   [Y] TELEPORTAR   [I] BAG"), *Character->GetSelectedFastTravelLabel());
     StateText->SetText(FText::FromString(State));
 
     const FNWWeaponDefinition Weapon = NWCombat::GetWeaponDefinition(Character->GetActiveWeapon());
-    const TCHAR* Keys[3] = { TEXT("Q"), TEXT("E"), TEXT("C") };
+    const TCHAR* Keys[3] = { TEXT("Q"), TEXT("E"), TEXT("R") };
     for (int32 Index = 0; Index < AbilityTexts.Num() && Index < Weapon.Abilities.Num(); ++Index)
     {
         const float Remaining = Character->GetAbilityCooldownRemaining(Index);
@@ -209,6 +209,7 @@ void UNWCombatHUDWidget::ToggleInventory()
         InventoryPanel->SetVisibility(bInventoryVisible ? ESlateVisibility::Visible : ESlateVisibility::Collapsed);
     }
     if (bInventoryVisible) { RefreshInventory(); }
+    UE_LOG(LogTemp, Display, TEXT("[HUD] Bag %s"), bInventoryVisible ? TEXT("aberta") : TEXT("fechada"));
 }
 
 void UNWCombatHUDWidget::RefreshInventory()

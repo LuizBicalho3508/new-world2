@@ -8,6 +8,7 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/CharacterMovementComponent.h"
+#include "Math/RotationMatrix.h"
 #include "NWCharacter.h"
 #include "NWProceduralWorldManager.h"
 #include "UObject/ConstructorHelpers.h"
@@ -15,7 +16,7 @@
 ANWGameplaySafetyActor::ANWGameplaySafetyActor()
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.TickInterval = 0.05f;
+    PrimaryActorTick.TickInterval = 0.016f;
     bReplicates = false;
 
     SceneRoot = CreateDefaultSubobject<USceneComponent>(TEXT("SceneRoot"));
@@ -94,11 +95,12 @@ void ANWGameplaySafetyActor::RebuildCollisionProxy()
 
     GroundCollisionProxy->ClearInstances();
 
-    const int32 Grid = FMath::Clamp(CollisionGridResolution, 16, 64);
+    const int32 Grid = FMath::Clamp(CollisionGridResolution, 32, 96);
     const float HalfExtent = Manager->GetTerrainHalfExtent();
     const float TileSize = (HalfExtent * 2.0f) / static_cast<float>(Grid);
     const float HalfTile = TileSize * 0.5f;
-    const float ProxyXYScale = (TileSize * 0.98f) / 100.0f;
+    const float SampleOffset = FMath::Max(30.0f, TileSize * 0.45f);
+    const float ProxyXYScale = (TileSize * 1.035f) / 100.0f;
     const float ProxyZScale = CollisionProxyThickness / 100.0f;
     const FVector Origin = Manager->GetActorLocation();
 
@@ -110,25 +112,29 @@ void ANWGameplaySafetyActor::RebuildCollisionProxy()
         {
             const float WorldX = Origin.X - HalfExtent + HalfTile + X * TileSize;
             const float WorldY = Origin.Y - HalfExtent + HalfTile + Y * TileSize;
+            const float GroundZ = Manager->GetTerrainHeightAt(WorldX, WorldY);
 
-            // Mantemos o topo do proxy abaixo da menor amostra local. Assim ele nunca
-            // deve aparecer por cima do terreno visual; o clamp de player abaixo cuida
-            // da aderencia exata a superficie procedural.
-            float TopZ = Manager->GetTerrainHeightAt(WorldX, WorldY);
-            TopZ = FMath::Min(TopZ, Manager->GetTerrainHeightAt(WorldX - HalfTile, WorldY - HalfTile));
-            TopZ = FMath::Min(TopZ, Manager->GetTerrainHeightAt(WorldX + HalfTile, WorldY - HalfTile));
-            TopZ = FMath::Min(TopZ, Manager->GetTerrainHeightAt(WorldX - HalfTile, WorldY + HalfTile));
-            TopZ = FMath::Min(TopZ, Manager->GetTerrainHeightAt(WorldX + HalfTile, WorldY + HalfTile));
-            TopZ -= 24.0f;
+            const float HeightLeft = Manager->GetTerrainHeightAt(WorldX - SampleOffset, WorldY);
+            const float HeightRight = Manager->GetTerrainHeightAt(WorldX + SampleOffset, WorldY);
+            const float HeightDown = Manager->GetTerrainHeightAt(WorldX, WorldY - SampleOffset);
+            const float HeightUp = Manager->GetTerrainHeightAt(WorldX, WorldY + SampleOffset);
 
-            const FVector Location(WorldX, WorldY, TopZ - CollisionProxyThickness * 0.5f);
+            const FVector Normal = FVector(
+                HeightLeft - HeightRight,
+                HeightDown - HeightUp,
+                2.0f * SampleOffset).GetSafeNormal();
+
+            const FRotator SurfaceRotation = FRotationMatrix::MakeFromZ(Normal).Rotator();
+            const FVector SurfacePoint(WorldX, WorldY, GroundZ - 2.0f);
+            const FVector Location = SurfacePoint - Normal * (CollisionProxyThickness * 0.5f);
             const FVector Scale(ProxyXYScale, ProxyXYScale, ProxyZScale);
-            GroundCollisionProxy->AddInstance(FTransform(FRotator::ZeroRotator, Location, Scale), true);
+
+            GroundCollisionProxy->AddInstance(FTransform(SurfaceRotation, Location, Scale), true);
         }
     }
 
     CachedEpoch = Manager->GetWorldEpoch();
-    UE_LOG(LogTemp, Display, TEXT("[SAFETY] proxy de colisao procedural reconstruido: %dx%d | epoch=%d"), Grid, Grid, CachedEpoch);
+    UE_LOG(LogTemp, Display, TEXT("[SAFETY] piso de colisao reconstruido: %dx%d | epoch=%d"), Grid, Grid, CachedEpoch);
 }
 
 void ANWGameplaySafetyActor::StabilizePlayers()
@@ -156,11 +162,14 @@ void ANWGameplaySafetyActor::StabilizePlayers()
         const FVector Current = Character->GetActorLocation();
         const float GroundZ = Manager->GetTerrainHeightAt(Current.X, Current.Y);
         const float CapsuleHalfHeight = Character->GetCapsuleComponent()->GetScaledCapsuleHalfHeight();
-        const float SafeCenterZ = GroundZ + CapsuleHalfHeight + 4.0f;
+        const float SafeCenterZ = GroundZ + CapsuleHalfHeight + 3.0f;
+        const float Difference = Current.Z - SafeCenterZ;
 
-        // Durante um pulo normal o centro do capsule fica acima do solo. So
-        // interferimos quando ele realmente atravessa a superficie na descida.
-        if (Current.Z >= SafeCenterZ - VisualGroundTolerance || Movement->Velocity.Z > 0.0f)
+        const bool bDescending = Movement->Velocity.Z <= 0.0f;
+        const bool bLandingSnap = Movement->IsFalling() && bDescending && Difference <= LandingSnapTolerance && Difference >= -EmergencyRecoveryDepth;
+        const bool bEmergencyRecovery = Difference < -EmergencyRecoveryDepth;
+
+        if (!bLandingSnap && !bEmergencyRecovery)
         {
             continue;
         }
@@ -174,11 +183,14 @@ void ANWGameplaySafetyActor::StabilizePlayers()
         Movement->Velocity = Velocity;
         Movement->SetMovementMode(MOVE_Walking);
 
-        const float Now = GetWorld()->GetTimeSeconds();
-        if ((Now - LastRecoveryLogTime) >= 2.0f)
+        if (bEmergencyRecovery)
         {
-            LastRecoveryLogTime = Now;
-            UE_LOG(LogTemp, Warning, TEXT("[SAFETY] player recuperado para o terreno em Z=%.1f (estava %.1f)."), SafeCenterZ, Current.Z);
+            const float Now = GetWorld()->GetTimeSeconds();
+            if ((Now - LastRecoveryLogTime) >= 2.0f)
+            {
+                LastRecoveryLogTime = Now;
+                UE_LOG(LogTemp, Warning, TEXT("[SAFETY] queda atraves do terreno corrigida: Z %.1f -> %.1f"), Current.Z, SafeCenterZ);
+            }
         }
     }
 }
