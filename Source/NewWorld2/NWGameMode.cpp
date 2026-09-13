@@ -13,6 +13,7 @@
 #include "NWEnemy.h"
 #include "NWGameplaySafetyActor.h"
 #include "NWLightingSafetyActor.h"
+#include "NWPremiumGameplayDirector.h"
 #include "NWProceduralWorldManager.h"
 #include "NWWorldEventDirector.h"
 #include "ProceduralMeshComponent.h"
@@ -143,16 +144,23 @@ void ANWGameMode::StartPlay()
         {
             FActorSpawnParameters Params;
             Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-
-            // Um unico dono para armas/armaduras/inimigos. O antigo manager realista
-            // sobrescrevia o manager base a cada 250 ms enquanto o SafetyActor mudava
-            // escala em paralelo; isso gerava a arma piscando e mudando de tamanho.
             GetWorld()->SpawnActor<ANWContentPresentationManager>(
-                ANWContentPresentationManager::StaticClass(),
-                FVector::ZeroVector,
-                FRotator::ZeroRotator,
-                Params);
+                ANWContentPresentationManager::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
             UE_LOG(LogTemp, Display, TEXT("[VISUAL] presentation manager unico ativo; sem sobrescritas concorrentes de arma/armadura."));
+        }
+
+        bool bHasPremiumDirector = false;
+        for (TActorIterator<ANWPremiumGameplayDirector> It(GetWorld()); It; ++It)
+        {
+            bHasPremiumDirector = true;
+            break;
+        }
+        if (!bHasPremiumDirector)
+        {
+            FActorSpawnParameters Params;
+            Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
+            GetWorld()->SpawnActor<ANWPremiumGameplayDirector>(
+                ANWPremiumGameplayDirector::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
         }
     }
 
@@ -286,11 +294,7 @@ ANWProceduralWorldManager* ANWGameMode::EnsureWorldManager()
 
     const FTransform ManagerTransform(FRotator::ZeroRotator, FVector::ZeroVector);
     WorldManager = GetWorld()->SpawnActorDeferred<ANWProceduralWorldManager>(
-        ANWProceduralWorldManager::StaticClass(),
-        ManagerTransform,
-        this,
-        nullptr,
-        ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+        ANWProceduralWorldManager::StaticClass(), ManagerTransform, this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 
     if (!WorldManager)
     {
