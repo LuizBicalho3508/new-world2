@@ -15,7 +15,7 @@
 ANWEnemyVisualDirector::ANWEnemyVisualDirector()
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.TickInterval = 0.40f;
+    PrimaryActorTick.TickInterval = 0.10f;
     bReplicates = false;
 }
 
@@ -106,9 +106,6 @@ void ANWEnemyVisualDirector::StabilizePlayerWeaponVisuals()
             const FString WeaponPath = WeaponMesh ? WeaponMesh->GetPathName() : FString();
             const bool bEnginePrimitive = WeaponPath.Contains(TEXT("/Engine/BasicShapes/"), ESearchCase::IgnoreCase);
 
-            // O Greystone usado neste vertical slice ja possui arma integrada ao visual/rig.
-            // Acrescentar outra espada sobre a mao produz a duplicacao vista no playtest.
-            // Para outros personagens, apenas placeholders de BasicShapes sao ocultados.
             if (bGreystoneRig || bEnginePrimitive)
             {
                 Component->SetVisibility(false, true);
