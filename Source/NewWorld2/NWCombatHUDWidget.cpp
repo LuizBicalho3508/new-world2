@@ -24,7 +24,9 @@ void UNWCombatHUDWidget::NativeConstruct()
 {
     Super::NativeConstruct();
     BuildHUD();
+    SetVisibility(ESlateVisibility::HitTestInvisible);
     RefreshHUD();
+    UE_LOG(LogTemp, Warning, TEXT("[HUD] CombatHUD construido e visivel."));
 }
 
 void UNWCombatHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
@@ -59,7 +61,7 @@ void UNWCombatHUDWidget::BuildHUD()
 
     UBorder* VitalsBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("VitalsBorder"));
     VitalsBorder->SetPadding(FMargin(14.0f));
-    VitalsBorder->SetBrushColor(FLinearColor(0.015f, 0.02f, 0.025f, 0.84f));
+    VitalsBorder->SetBrushColor(FLinearColor(0.015f, 0.02f, 0.025f, 0.82f));
     UCanvasPanelSlot* VitalsSlot = Root->AddChildToCanvas(VitalsBorder);
     VitalsSlot->SetAnchors(FAnchors(0.0f, 0.0f));
     VitalsSlot->SetPosition(FVector2D(28.0f, 28.0f));
@@ -85,16 +87,16 @@ void UNWCombatHUDWidget::BuildHUD()
     StaminaBar->SetFillColorAndOpacity(FLinearColor(0.93f, 0.72f, 0.12f, 1.0f));
     VitalsBox->AddChildToVerticalBox(StaminaBar);
 
-    StateText = MakeText(TEXT("NORMAL"), 14);
+    StateText = MakeText(TEXT("COMBATE PRONTO"), 14);
     VitalsBox->AddChildToVerticalBox(StateText);
 
     UBorder* AbilityBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("AbilityBorder"));
     AbilityBorder->SetPadding(FMargin(12.0f));
-    AbilityBorder->SetBrushColor(FLinearColor(0.01f, 0.015f, 0.02f, 0.88f));
+    AbilityBorder->SetBrushColor(FLinearColor(0.01f, 0.015f, 0.02f, 0.86f));
     UCanvasPanelSlot* AbilityCanvasSlot = Root->AddChildToCanvas(AbilityBorder);
     AbilityCanvasSlot->SetAnchors(FAnchors(0.5f, 1.0f));
     AbilityCanvasSlot->SetAlignment(FVector2D(0.5f, 1.0f));
-    AbilityCanvasSlot->SetPosition(FVector2D(0.0f, -32.0f));
+    AbilityCanvasSlot->SetPosition(FVector2D(0.0f, -28.0f));
     AbilityCanvasSlot->SetSize(FVector2D(760.0f, 108.0f));
 
     UHorizontalBox* AbilityRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
@@ -106,7 +108,7 @@ void UNWCombatHUDWidget::BuildHUD()
     {
         UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
         Card->SetPadding(FMargin(12.0f, 8.0f));
-        Card->SetBrushColor(FLinearColor(0.06f, 0.075f, 0.09f, 0.96f));
+        Card->SetBrushColor(FLinearColor(0.06f, 0.075f, 0.09f, 0.94f));
         UHorizontalBoxSlot* CardSlot = AbilityRow->AddChildToHorizontalBox(Card);
         CardSlot->SetPadding(FMargin(5.0f));
         CardSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -122,8 +124,26 @@ void UNWCombatHUDWidget::BuildHUD()
     UCanvasPanelSlot* LootSlot = Root->AddChildToCanvas(LootPromptText);
     LootSlot->SetAnchors(FAnchors(0.5f, 1.0f));
     LootSlot->SetAlignment(FVector2D(0.5f, 1.0f));
-    LootSlot->SetPosition(FVector2D(0.0f, -152.0f));
+    LootSlot->SetPosition(FVector2D(0.0f, -145.0f));
     LootSlot->SetSize(FVector2D(980.0f, 54.0f));
+
+    CrosshairText = MakeText(TEXT("+"), 24);
+    CrosshairText->SetJustification(ETextJustify::Center);
+    CrosshairText->SetColorAndOpacity(FSlateColor(FLinearColor(0.92f, 0.94f, 0.96f, 0.78f)));
+    UCanvasPanelSlot* CrosshairSlot = Root->AddChildToCanvas(CrosshairText);
+    CrosshairSlot->SetAnchors(FAnchors(0.5f, 0.5f));
+    CrosshairSlot->SetAlignment(FVector2D(0.5f, 0.5f));
+    CrosshairSlot->SetPosition(FVector2D(0.0f, -8.0f));
+    CrosshairSlot->SetSize(FVector2D(42.0f, 42.0f));
+
+    HelpText = MakeText(TEXT("LMB atacar  |  RMB bloquear/parry  |  ALT esquiva  |  Q/E/R skills  |  1/2 armas  |  G loot  |  I bag"), 12);
+    HelpText->SetJustification(ETextJustify::Right);
+    HelpText->SetColorAndOpacity(FSlateColor(FLinearColor(0.78f, 0.82f, 0.86f, 0.90f)));
+    UCanvasPanelSlot* HelpSlot = Root->AddChildToCanvas(HelpText);
+    HelpSlot->SetAnchors(FAnchors(1.0f, 1.0f));
+    HelpSlot->SetAlignment(FVector2D(1.0f, 1.0f));
+    HelpSlot->SetPosition(FVector2D(-24.0f, -20.0f));
+    HelpSlot->SetSize(FVector2D(760.0f, 32.0f));
 
     InventoryPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InventoryPanel"));
     InventoryPanel->SetPadding(FMargin(22.0f));
