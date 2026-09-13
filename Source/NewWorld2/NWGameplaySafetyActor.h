@@ -4,9 +4,11 @@
 #include "GameFramework/Actor.h"
 #include "NWGameplaySafetyActor.generated.h"
 
+class ANWCharacter;
 class ANWProceduralWorldManager;
 class UHierarchicalInstancedStaticMeshComponent;
 class USceneComponent;
+class UStaticMeshComponent;
 
 /**
  * Estabiliza o primeiro playtest do terreno procedural.
@@ -15,9 +17,9 @@ class USceneComponent;
  * ator cria um piso de colisao invisivel seguindo a inclinacao local da malha e
  * faz apenas uma recuperacao de emergencia caso o capsule atravesse a superficie.
  *
- * Tambem aplica um budget global de inimigos no servidor/standalone. Isso evita
- * que ondas de invasao e spawns de mundo acumulem Characters indefinidamente em
- * maquinas com CPU antiga durante um playtest prolongado.
+ * Tambem aplica budget global de inimigos e protecoes visuais. Packs Fab podem
+ * usar centimetros, metros, pivots e escalas muito diferentes; componentes de arma
+ * e criaturas fora de uma faixa plausivel sao normalizados em runtime.
  */
 UCLASS()
 class NEWORLD2_API ANWGameplaySafetyActor : public AActor
@@ -36,6 +38,10 @@ private:
     ANWProceduralWorldManager* ResolveWorldManager();
     void RebuildCollisionProxy();
     void StabilizePlayers();
+    void StabilizeRuntimeVisuals(float DeltaSeconds);
+    void NormalizeWeaponVisuals(ANWCharacter* Character);
+    void NormalizeEnemyVisuals();
+    void NormalizeStaticMeshComponent(UStaticMeshComponent* Component, float TargetMaxDimension, const TCHAR* Context);
     void EnforceEnemyPopulationBudget(float DeltaSeconds);
 
     UPROPERTY(VisibleAnywhere, Category="Safety")
@@ -69,8 +75,12 @@ private:
     UPROPERTY(EditDefaultsOnly, Category="Safety|Performance", meta=(ClampMin="0.5", ClampMax="10.0"))
     float PopulationCheckInterval = 2.0f;
 
+    UPROPERTY(EditDefaultsOnly, Category="Safety|Visual", meta=(ClampMin="0.10", ClampMax="5.0"))
+    float VisualSafetyInterval = 0.50f;
+
     TWeakObjectPtr<ANWProceduralWorldManager> CachedWorldManager;
     int32 CachedEpoch = INDEX_NONE;
     float LastRecoveryLogTime = -1000.0f;
     float PopulationCheckAccumulator = 0.0f;
+    float VisualSafetyAccumulator = 0.0f;
 };
