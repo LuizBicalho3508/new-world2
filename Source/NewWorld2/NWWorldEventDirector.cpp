@@ -1,9 +1,7 @@
 #include "NWWorldEventDirector.h"
 
 #include "AssetRegistry/AssetRegistryModule.h"
-#include "Components/DirectionalLightComponent.h"
 #include "Components/ExponentialHeightFogComponent.h"
-#include "Components/SkyLightComponent.h"
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/PlayerController.h"
@@ -22,7 +20,7 @@
 ANWWorldEventDirector::ANWWorldEventDirector()
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.TickInterval = 0.05f;
+    PrimaryActorTick.TickInterval = 0.10f;
     bReplicates = true;
     SetReplicateMovement(false);
     NetUpdateFrequency = 2.0f;
@@ -67,7 +65,7 @@ void ANWWorldEventDirector::Tick(float DeltaSeconds)
 
     EnvironmentAccumulator += DeltaSeconds;
     WeatherFxAccumulator += DeltaSeconds;
-    if (EnvironmentAccumulator >= 0.25f)
+    if (EnvironmentAccumulator >= 0.50f)
     {
         EnvironmentAccumulator = 0.0f;
         ApplyEnvironmentPresentation();
@@ -100,6 +98,15 @@ bool ANWWorldEventDirector::IsValidFastTravelDestination(int32 Index) const
 
 void ANWWorldEventDirector::DiscoverPresentationAssets()
 {
+    NiagaraAssets.Reset();
+    SoundAssets.Reset();
+
+    if (!bEnableDynamicPresentationAssets)
+    {
+        UE_LOG(LogTemp, Display, TEXT("[PRESENTATION] modo estavel: busca automatica Niagara/Audio desativada; sem compilacao de FX aleatorio durante combate."));
+        return;
+    }
+
     IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
 
     FARFilter NiagaraFilter;
@@ -115,12 +122,12 @@ void ANWWorldEventDirector::DiscoverPresentationAssets()
     SoundFilter.bRecursiveClasses = true;
     Registry.GetAssets(SoundFilter, SoundAssets);
 
-    UE_LOG(LogTemp, Display, TEXT("[PRESENTATION] Assets detectados: Niagara=%d | Audio=%d"), NiagaraAssets.Num(), SoundAssets.Num());
+    UE_LOG(LogTemp, Display, TEXT("[PRESENTATION] Assets dinamicos detectados: Niagara=%d | Audio=%d"), NiagaraAssets.Num(), SoundAssets.Num());
 }
 
 void ANWWorldEventDirector::UpdateDayNight(float DeltaSeconds)
 {
-    const float SafeDuration = FMath::Max(120.0f, FullDayDurationSeconds);
+    const float SafeDuration = FMath::Max(300.0f, FullDayDurationSeconds);
     WorldTimeHours = FMath::Fmod(WorldTimeHours + DeltaSeconds * (24.0f / SafeDuration), 24.0f);
 }
 
@@ -128,43 +135,22 @@ void ANWWorldEventDirector::ApplyEnvironmentPresentation()
 {
     if (!GetWorld()) { return; }
 
-    const float SolarAngle = (WorldTimeHours - 12.0f) / 12.0f * PI;
-    const float DayFactor = FMath::Clamp(FMath::Cos(SolarAngle) * 1.15f + 0.08f, 0.025f, 1.0f);
-    const float SunPitch = -90.0f + (WorldTimeHours / 24.0f) * 360.0f;
-
-    float FogDensity = 0.007f;
+    // IMPORTANTE: sol e skylight tem um unico escritor: NWLightingSafetyActor.
+    // Antes, este ator escrevia a rotacao oposta no mesmo frame e causava o piscar
+    // observado no playtest. Aqui o diretor trata apenas neblina/clima.
+    float FogDensity = 0.006f;
     switch (CurrentWeather)
     {
-        case ENWWeatherType::Rain: FogDensity = 0.014f; break;
-        case ENWWeatherType::Storm: FogDensity = 0.026f; break;
-        case ENWWeatherType::Snow: FogDensity = 0.019f; break;
-        case ENWWeatherType::Sandstorm: FogDensity = 0.030f; break;
-        case ENWWeatherType::HeavyFog: FogDensity = 0.055f; break;
+        case ENWWeatherType::Rain: FogDensity = 0.010f; break;
+        case ENWWeatherType::Storm: FogDensity = 0.016f; break;
+        case ENWWeatherType::Snow: FogDensity = 0.012f; break;
+        case ENWWeatherType::Sandstorm: FogDensity = 0.018f; break;
+        case ENWWeatherType::HeavyFog: FogDensity = 0.026f; break;
         default: break;
     }
 
     for (TActorIterator<ANWProceduralWorldManager> It(GetWorld()); It; ++It)
     {
-        TArray<UDirectionalLightComponent*> Suns;
-        It->GetComponents<UDirectionalLightComponent>(Suns);
-        for (UDirectionalLightComponent* Sun : Suns)
-        {
-            if (!Sun) { continue; }
-            Sun->SetWorldRotation(FRotator(SunPitch, -35.0f, 0.0f));
-            Sun->SetIntensity(8.0f * DayFactor);
-            const FLinearColor SunColor = DayFactor < 0.30f
-                ? FLinearColor(1.0f, 0.46f, 0.24f)
-                : FLinearColor(1.0f, 0.92f, 0.78f);
-            Sun->SetLightColor(SunColor);
-        }
-
-        TArray<USkyLightComponent*> Skies;
-        It->GetComponents<USkyLightComponent>(Skies);
-        for (USkyLightComponent* Sky : Skies)
-        {
-            if (Sky) { Sky->SetIntensity(0.12f + DayFactor * 0.72f); }
-        }
-
         TArray<UExponentialHeightFogComponent*> Fogs;
         It->GetComponents<UExponentialHeightFogComponent>(Fogs);
         for (UExponentialHeightFogComponent* Fog : Fogs)
@@ -182,6 +168,7 @@ void ANWWorldEventDirector::ChangeWeather()
     const int32 Step = 1 + FMath::RandRange(0, 4);
     CurrentWeather = static_cast<ENWWeatherType>((Current + Step) % 6);
     ForceNetUpdate();
+    ApplyEnvironmentPresentation();
 
     UE_LOG(LogTemp, Warning, TEXT("[CLIMA] Mudanca global: %s | hora %.1f"), *WeatherToString(CurrentWeather), WorldTimeHours);
 }
@@ -234,7 +221,10 @@ void ANWWorldEventDirector::UpdateLocalPlayerPresentation(float DeltaSeconds)
         ANWCharacter* Character = Cast<ANWCharacter>(PC->GetPawn());
         if (!Character) { continue; }
 
-        DetectAbilityUse(Character);
+        if (bEnableDynamicPresentationAssets)
+        {
+            DetectAbilityUse(Character);
+        }
 
         const ENWBiomeType Biome = GetBiomeAtLocation(Character->GetActorLocation());
         const ENWWeatherType EffectiveWeather = GetEffectiveWeatherForBiome(Biome);
@@ -245,9 +235,12 @@ void ANWWorldEventDirector::UpdateLocalPlayerPresentation(float DeltaSeconds)
             PreviousBiomes.Add(Character, Biome);
             UE_LOG(LogTemp, Display, TEXT("[BIOMA] Entrou em: %s"), *BiomeToString(Biome));
 
-            if (USoundBase* Ambient = FindBestSound({ BiomeToString(Biome), TEXT("Ambience"), TEXT("Ambient") }))
+            if (bEnableDynamicPresentationAssets)
             {
-                UGameplayStatics::PlaySound2D(this, Ambient, 0.34f);
+                if (USoundBase* Ambient = FindBestSound({ BiomeToString(Biome), TEXT("Ambience"), TEXT("Ambient") }))
+                {
+                    UGameplayStatics::PlaySound2D(this, Ambient, 0.24f);
+                }
             }
         }
 
@@ -256,20 +249,23 @@ void ANWWorldEventDirector::UpdateLocalPlayerPresentation(float DeltaSeconds)
         if (bWeatherChanged)
         {
             PreviousEffectiveWeather.Add(Character, EffectiveWeather);
-            PlayWeatherPresentation(Character, EffectiveWeather);
+            if (bEnableDynamicPresentationAssets)
+            {
+                PlayWeatherPresentation(Character, EffectiveWeather);
+            }
         }
-        else if (WeatherFxAccumulator >= 5.5f && EffectiveWeather != ENWWeatherType::Clear)
+        else if (bEnableDynamicPresentationAssets && WeatherFxAccumulator >= 8.0f && EffectiveWeather != ENWWeatherType::Clear)
         {
             PlayWeatherPresentation(Character, EffectiveWeather);
         }
     }
 
-    if (WeatherFxAccumulator >= 5.5f) { WeatherFxAccumulator = 0.0f; }
+    if (WeatherFxAccumulator >= 8.0f) { WeatherFxAccumulator = 0.0f; }
 }
 
 void ANWWorldEventDirector::DetectAbilityUse(ANWCharacter* Character)
 {
-    if (!Character) { return; }
+    if (!bEnableDynamicPresentationAssets || !Character) { return; }
 
     const ENWWeaponType ActiveWeapon = Character->GetActiveWeapon();
     ENWWeaponType* PreviousWeapon = PreviousWeapons.Find(Character);
@@ -308,26 +304,19 @@ TArray<FString> ANWWorldEventDirector::GetAbilityKeywords(ENWWeaponType Weapon, 
             return AbilityIndex == 0
                 ? TArray<FString>{ TEXT("Arcane"), TEXT("Magic"), TEXT("Projectile"), TEXT("Lightning"), TEXT("Fire") }
                 : TArray<FString>{ TEXT("Explosion"), TEXT("AoE"), TEXT("Arcane"), TEXT("Ice"), TEXT("Lightning") };
-        case ENWWeaponType::Greatsword:
-            return { TEXT("Sword"), TEXT("Slash"), TEXT("Impact"), TEXT("Shockwave"), TEXT("Earth") };
-        case ENWWeaponType::DualSwords:
-            return { TEXT("Slash"), TEXT("Blade"), TEXT("Spin"), TEXT("Wind"), TEXT("Blood") };
-        case ENWWeaponType::SwordShield:
-            return { TEXT("Shield"), TEXT("Impact"), TEXT("Holy"), TEXT("Guard"), TEXT("Shockwave") };
-        case ENWWeaponType::Daggers:
-            return { TEXT("Shadow"), TEXT("Blood"), TEXT("Poison"), TEXT("Blade"), TEXT("Slash") };
-        case ENWWeaponType::Bow:
-            return { TEXT("Arrow"), TEXT("Projectile"), TEXT("Wind"), TEXT("Nature"), TEXT("Rain") };
-        case ENWWeaponType::Firearm:
-            return { TEXT("Muzzle"), TEXT("Gun"), TEXT("Fire"), TEXT("Smoke"), TEXT("Explosion") };
-        default:
-            return { TEXT("Magic"), TEXT("Impact") };
+        case ENWWeaponType::Greatsword: return { TEXT("Sword"), TEXT("Slash"), TEXT("Impact"), TEXT("Shockwave"), TEXT("Earth") };
+        case ENWWeaponType::DualSwords: return { TEXT("Slash"), TEXT("Blade"), TEXT("Spin"), TEXT("Wind"), TEXT("Blood") };
+        case ENWWeaponType::SwordShield: return { TEXT("Shield"), TEXT("Impact"), TEXT("Holy"), TEXT("Guard"), TEXT("Shockwave") };
+        case ENWWeaponType::Daggers: return { TEXT("Shadow"), TEXT("Blood"), TEXT("Poison"), TEXT("Blade"), TEXT("Slash") };
+        case ENWWeaponType::Bow: return { TEXT("Arrow"), TEXT("Projectile"), TEXT("Wind"), TEXT("Nature"), TEXT("Rain") };
+        case ENWWeaponType::Firearm: return { TEXT("Muzzle"), TEXT("Gun"), TEXT("Fire"), TEXT("Smoke"), TEXT("Explosion") };
+        default: return { TEXT("Magic"), TEXT("Impact") };
     }
 }
 
 void ANWWorldEventDirector::PlayAbilityPresentation(ANWCharacter* Character, int32 AbilityIndex)
 {
-    if (!Character) { return; }
+    if (!bEnableDynamicPresentationAssets || !Character) { return; }
 
     TArray<FString> Keywords = GetAbilityKeywords(Character->GetActiveWeapon(), AbilityIndex);
     if (Character->GetActiveWeapon() == ENWWeaponType::Bow)
@@ -345,11 +334,11 @@ void ANWWorldEventDirector::PlayAbilityPresentation(ANWCharacter* Character, int
 
     const FNWWeaponDefinition WeaponDef = NWCombat::GetWeaponDefinition(Character->GetActiveWeapon());
     const bool bArea = WeaponDef.Abilities.IsValidIndex(AbilityIndex) && WeaponDef.Abilities[AbilityIndex].Kind == ENWAbilityKind::AreaDamage;
-
     const FVector Origin = Character->GetActorLocation() + Character->GetActorForwardVector() * (bArea ? 180.0f : 110.0f) + FVector(0.0f, 0.0f, 82.0f);
+
     if (UNiagaraSystem* Effect = FindBestNiagara(Keywords))
     {
-        const float ScaleValue = bArea ? 2.4f : (AbilityIndex == 2 ? 1.7f : 1.45f);
+        const float ScaleValue = bArea ? 2.0f : (AbilityIndex == 2 ? 1.5f : 1.25f);
         UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, Effect, Origin, Character->GetActorRotation(), FVector(ScaleValue));
     }
 
@@ -357,15 +346,13 @@ void ANWWorldEventDirector::PlayAbilityPresentation(ANWCharacter* Character, int
     SoundKeywords.Add(AbilityIndex == 2 ? TEXT("Heal") : TEXT("Cast"));
     if (USoundBase* Sound = FindBestSound(SoundKeywords))
     {
-        UGameplayStatics::PlaySoundAtLocation(this, Sound, Origin, 0.85f, AbilityIndex == 2 ? 1.06f : 1.0f);
+        UGameplayStatics::PlaySoundAtLocation(this, Sound, Origin, 0.65f, AbilityIndex == 2 ? 1.06f : 1.0f);
     }
-
-    UE_LOG(LogTemp, Display, TEXT("[VFX] %s habilidade %d apresentada com busca Niagara/SFX automatica."), *Character->GetActiveWeaponName(), AbilityIndex + 1);
 }
 
 void ANWWorldEventDirector::PlayWeatherPresentation(ANWCharacter* Character, ENWWeatherType EffectiveWeather)
 {
-    if (!Character || EffectiveWeather == ENWWeatherType::Clear) { return; }
+    if (!bEnableDynamicPresentationAssets || !Character || EffectiveWeather == ENWWeatherType::Clear) { return; }
 
     TArray<FString> Keywords;
     switch (EffectiveWeather)
@@ -381,18 +368,14 @@ void ANWWorldEventDirector::PlayWeatherPresentation(ANWCharacter* Character, ENW
     if (UNiagaraSystem* Effect = FindBestNiagara(Keywords))
     {
         const FVector Location = Character->GetActorLocation() + FVector(0.0f, 0.0f, 450.0f);
-        UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, Effect, Location, FRotator::ZeroRotator, FVector(3.5f));
-    }
-
-    Keywords.Add(TEXT("Ambience"));
-    if (USoundBase* Sound = FindBestSound(Keywords))
-    {
-        UGameplayStatics::PlaySound2D(this, Sound, 0.28f);
+        UNiagaraFunctionLibrary::SpawnSystemAtLocation(this, Effect, Location, FRotator::ZeroRotator, FVector(2.5f));
     }
 }
 
 UNiagaraSystem* ANWWorldEventDirector::FindBestNiagara(const TArray<FString>& Keywords) const
 {
+    if (!bEnableDynamicPresentationAssets) { return nullptr; }
+
     int32 BestScore = 0;
     FAssetData BestAsset;
     for (const FAssetData& Asset : NiagaraAssets)
@@ -403,18 +386,19 @@ UNiagaraSystem* ANWWorldEventDirector::FindBestNiagara(const TArray<FString>& Ke
         {
             if (Searchable.Contains(Keyword, ESearchCase::IgnoreCase)) { Score += 10; }
         }
-        if (Searchable.Contains(TEXT("Niagara"), ESearchCase::IgnoreCase)) { ++Score; }
         if (Score > BestScore)
         {
             BestScore = Score;
             BestAsset = Asset;
         }
     }
-    return BestScore > 0 ? Cast<UNiagaraSystem>(BestAsset.GetAsset()) : nullptr;
+    return BestScore >= 20 ? Cast<UNiagaraSystem>(BestAsset.GetAsset()) : nullptr;
 }
 
 USoundBase* ANWWorldEventDirector::FindBestSound(const TArray<FString>& Keywords) const
 {
+    if (!bEnableDynamicPresentationAssets) { return nullptr; }
+
     int32 BestScore = 0;
     FAssetData BestAsset;
     for (const FAssetData& Asset : SoundAssets)
@@ -431,7 +415,7 @@ USoundBase* ANWWorldEventDirector::FindBestSound(const TArray<FString>& Keywords
             BestAsset = Asset;
         }
     }
-    return BestScore > 0 ? Cast<USoundBase>(BestAsset.GetAsset()) : nullptr;
+    return BestScore >= 20 ? Cast<USoundBase>(BestAsset.GetAsset()) : nullptr;
 }
 
 void ANWWorldEventDirector::SpawnWorldDungeons()
@@ -459,45 +443,48 @@ void ANWWorldEventDirector::SpawnWorldDungeons()
     for (const FDungeonSpawn& Spawn : Spawns)
     {
         const float Z = WorldManager ? WorldManager->GetTerrainHeightAt(Spawn.XY.X, Spawn.XY.Y) : 0.0f;
-        FActorSpawnParameters Params;
-        Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-        ANWDungeonSite* Site = GetWorld()->SpawnActor<ANWDungeonSite>(ANWDungeonSite::StaticClass(), FVector(Spawn.XY.X, Spawn.XY.Y, Z + 30.0f), FRotator::ZeroRotator, Params);
-        if (Site)
-        {
-            Site->ConfigureDungeon(Spawn.Type, Spawn.Seed, Spawn.Tier);
-            DungeonSites.Add(Site);
-        }
+        const FTransform Transform(FRotator::ZeroRotator, FVector(Spawn.XY.X, Spawn.XY.Y, Z + 30.0f));
+        ANWDungeonSite* Site = GetWorld()->SpawnActorDeferred<ANWDungeonSite>(
+            ANWDungeonSite::StaticClass(), Transform, this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+        if (!Site) { continue; }
+
+        // Configura antes de BeginPlay para evitar a antiga populacao default ser criada
+        // e destruida no mesmo frame antes da configuracao real da dungeon.
+        Site->ConfigureDungeon(Spawn.Type, Spawn.Seed, Spawn.Tier);
+        UGameplayStatics::FinishSpawningActor(Site, Transform);
+        DungeonSites.Add(Site);
     }
 }
 
 void ANWWorldEventDirector::SpawnRoamingUndead()
 {
-    if (!HasAuthority() || !GetWorld()) { return; }
+    if (!HasAuthority() || !GetWorld() || RoamingEnemyCount <= 0) { return; }
 
     ANWProceduralWorldManager* WorldManager = nullptr;
     for (TActorIterator<ANWProceduralWorldManager> It(GetWorld()); It; ++It) { WorldManager = *It; break; }
 
     FRandomStream Random(0x5A17 + FMath::RoundToInt(WorldTimeHours * 100.0f));
-    FActorSpawnParameters Params;
-    Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-
-    for (int32 Index = 0; Index < 30; ++Index)
+    for (int32 Index = 0; Index < RoamingEnemyCount; ++Index)
     {
-        const ENWEnemyArchetype Archetype = Index < 18 ? ENWEnemyArchetype::Zombie : ENWEnemyArchetype::Ghost;
+        const ENWEnemyArchetype Archetype = Index < FMath::CeilToInt(RoamingEnemyCount * 0.60f)
+            ? ENWEnemyArchetype::Zombie
+            : ENWEnemyArchetype::Ghost;
         const float Angle = Random.FRandRange(0.0f, 2.0f * PI);
         const float Radius = Random.FRandRange(3400.0f, 8500.0f);
         const float X = FMath::Cos(Angle) * Radius;
         const float Y = FMath::Sin(Angle) * Radius;
         const float Z = WorldManager ? WorldManager->GetTerrainHeightAt(X, Y) : 0.0f;
-        ANWEnemy* Enemy = GetWorld()->SpawnActor<ANWEnemy>(ANWEnemy::StaticClass(), FVector(X, Y, Z + 130.0f), FRotator(0.0f, Random.FRandRange(0.0f, 360.0f), 0.0f), Params);
-        if (Enemy)
-        {
-            Enemy->ConfigureEnemy(Archetype, false, 1);
-            RoamingEnemies.Add(Enemy);
-        }
+        const FTransform Transform(FRotator(0.0f, Random.FRandRange(0.0f, 360.0f), 0.0f), FVector(X, Y, Z + 130.0f));
+
+        ANWEnemy* Enemy = GetWorld()->SpawnActorDeferred<ANWEnemy>(
+            ANWEnemy::StaticClass(), Transform, this, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+        if (!Enemy) { continue; }
+        Enemy->ConfigureEnemy(Archetype, false, 1);
+        UGameplayStatics::FinishSpawningActor(Enemy, Transform);
+        RoamingEnemies.Add(Enemy);
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[MOBS] %d zumbis/fantasmas adicionais espalhados pelo mapa."), RoamingEnemies.Num());
+    UE_LOG(LogTemp, Display, TEXT("[MOBS] %d zumbis/fantasmas roaming criados dentro do budget do playtest."), RoamingEnemies.Num());
 }
 
 void ANWWorldEventDirector::MaintainWorldBosses()
@@ -526,16 +513,16 @@ void ANWWorldEventDirector::SpawnOneWorldBoss()
     const float Z = WorldManager ? WorldManager->GetTerrainHeightAt(X, Y) : 0.0f;
     const ENWEnemyArchetype Archetype = static_cast<ENWEnemyArchetype>(Random.RandRange(0, 2));
     const int32 Tier = Random.RandRange(2, 4);
+    const FTransform Transform(FRotator(0.0f, Random.FRandRange(0.0f, 360.0f), 0.0f), FVector(X, Y, Z + 160.0f));
 
-    FActorSpawnParameters Params;
-    Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn;
-    ANWEnemy* Boss = GetWorld()->SpawnActor<ANWEnemy>(ANWEnemy::StaticClass(), FVector(X, Y, Z + 160.0f), FRotator(0.0f, Random.FRandRange(0.0f, 360.0f), 0.0f), Params);
-    if (Boss)
-    {
-        Boss->ConfigureEnemy(Archetype, true, Tier);
-        WorldBosses.Add(Boss);
-        UE_LOG(LogTemp, Warning, TEXT("[WORLD BOSS] novo boss tier %d surgiu em %.0f, %.0f."), Tier, X, Y);
-    }
+    ANWEnemy* Boss = GetWorld()->SpawnActorDeferred<ANWEnemy>(
+        ANWEnemy::StaticClass(), Transform, this, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+    if (!Boss) { return; }
+
+    Boss->ConfigureEnemy(Archetype, true, Tier);
+    UGameplayStatics::FinishSpawningActor(Boss, Transform);
+    WorldBosses.Add(Boss);
+    UE_LOG(LogTemp, Warning, TEXT("[WORLD BOSS] novo boss tier %d surgiu em %.0f, %.0f."), Tier, X, Y);
 }
 
 FString ANWWorldEventDirector::BiomeToString(ENWBiomeType Biome) const

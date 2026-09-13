@@ -11,6 +11,8 @@
 #include "Engine/StaticMesh.h"
 #include "Engine/World.h"
 #include "GameFramework/PlayerController.h"
+#include "Materials/MaterialInstanceDynamic.h"
+#include "Materials/MaterialInterface.h"
 #include "Modules/ModuleManager.h"
 #include "Net/UnrealNetwork.h"
 #include "NWCivilian.h"
@@ -84,7 +86,7 @@ ANWProceduralWorldManager::ANWProceduralWorldManager()
 
     HeightFog = CreateDefaultSubobject<UExponentialHeightFogComponent>(TEXT("HeightFog"));
     HeightFog->SetupAttachment(SceneRoot);
-    HeightFog->SetFogDensity(0.008f);
+    HeightFog->SetFogDensity(0.006f);
 
     static ConstructorHelpers::FObjectFinder<UStaticMesh> CylinderMesh(TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
     static ConstructorHelpers::FObjectFinder<UStaticMesh> ConeMesh(TEXT("/Engine/BasicShapes/Cone.Cone"));
@@ -107,7 +109,8 @@ void ANWProceduralWorldManager::BeginPlay()
     }
     else
     {
-        UE_LOG(LogTemp, Display, TEXT("[VISUAL] modo seguro ativo: mundo usa primitives previsiveis; assets Fab ficam reservados para adapters autorados."));
+        ApplySafeFallbackMaterials();
+        UE_LOG(LogTemp, Display, TEXT("[VISUAL] fallback premium seguro: primitives coloridos e escala autorada; Fab de mundo aguarda adapter por pack."));
     }
 
     ConfigureRuntimePCG();
@@ -122,9 +125,54 @@ void ANWProceduralWorldManager::BeginPlay()
 
         if (InvasionIntervalSeconds > 0.0f)
         {
-            GetWorldTimerManager().SetTimer(InvasionTimer, this, &ANWProceduralWorldManager::SpawnInvasionWave, InvasionIntervalSeconds, true, 20.0f);
+            // A versao anterior disparava a primeira invasao em 20s, exatamente
+            // durante shader warm-up/teste de habilidades. Agora a primeira onda
+            // respeita o mesmo intervalo configurado das ondas seguintes.
+            GetWorldTimerManager().SetTimer(
+                InvasionTimer,
+                this,
+                &ANWProceduralWorldManager::SpawnInvasionWave,
+                InvasionIntervalSeconds,
+                true,
+                InvasionIntervalSeconds);
         }
     }
+}
+
+UMaterialInstanceDynamic* ANWProceduralWorldManager::CreateFallbackMaterial(const FLinearColor& Color, const FName Name)
+{
+    UMaterialInterface* BaseMaterial = LoadObject<UMaterialInterface>(nullptr, TEXT("/Engine/BasicShapes/BasicShapeMaterial.BasicShapeMaterial"));
+    if (!BaseMaterial) { return nullptr; }
+
+    UMaterialInstanceDynamic* MID = UMaterialInstanceDynamic::Create(BaseMaterial, this, Name);
+    if (MID)
+    {
+        MID->SetVectorParameterValue(FName(TEXT("Color")), Color);
+    }
+    return MID;
+}
+
+void ANWProceduralWorldManager::ApplySafeFallbackMaterials()
+{
+    TerrainFallbackMaterial = CreateFallbackMaterial(FLinearColor(0.18f, 0.30f, 0.12f, 1.0f), TEXT("MID_NW_Terrain"));
+    TrunkFallbackMaterial = CreateFallbackMaterial(FLinearColor(0.20f, 0.085f, 0.035f, 1.0f), TEXT("MID_NW_Trunk"));
+    FoliageFallbackMaterial = CreateFallbackMaterial(FLinearColor(0.055f, 0.24f, 0.075f, 1.0f), TEXT("MID_NW_Foliage"));
+    RockFallbackMaterial = CreateFallbackMaterial(FLinearColor(0.24f, 0.26f, 0.27f, 1.0f), TEXT("MID_NW_Rock"));
+    CrystalFallbackMaterial = CreateFallbackMaterial(FLinearColor(0.08f, 0.42f, 0.70f, 1.0f), TEXT("MID_NW_Crystal"));
+    BuildingFallbackMaterial = CreateFallbackMaterial(FLinearColor(0.30f, 0.18f, 0.10f, 1.0f), TEXT("MID_NW_Building"));
+    StructureFallbackMaterial = CreateFallbackMaterial(FLinearColor(0.20f, 0.22f, 0.24f, 1.0f), TEXT("MID_NW_Structure"));
+
+    if (TerrainFallbackMaterial) { TerrainMesh->SetMaterial(0, TerrainFallbackMaterial); }
+    if (TrunkFallbackMaterial) { TreeTrunks->SetMaterial(0, TrunkFallbackMaterial); }
+    if (FoliageFallbackMaterial)
+    {
+        TreeCrowns->SetMaterial(0, FoliageFallbackMaterial);
+        Bushes->SetMaterial(0, FoliageFallbackMaterial);
+    }
+    if (RockFallbackMaterial) { Rocks->SetMaterial(0, RockFallbackMaterial); }
+    if (CrystalFallbackMaterial) { Crystals->SetMaterial(0, CrystalFallbackMaterial); }
+    if (BuildingFallbackMaterial) { Buildings->SetMaterial(0, BuildingFallbackMaterial); }
+    if (StructureFallbackMaterial) { Structures->SetMaterial(0, StructureFallbackMaterial); }
 }
 
 void ANWProceduralWorldManager::ConfigureRuntimePCG()
@@ -144,7 +192,7 @@ void ANWProceduralWorldManager::ConfigureRuntimePCG()
     }
     else
     {
-        UE_LOG(LogTemp, Display, TEXT("[PCG] componente runtime particionado preparado; sem grafo local, usando gerador C++ como fallback."));
+        UE_LOG(LogTemp, Display, TEXT("[PCG] componente runtime preparado; sem grafo local, usando gerador C++ deterministico."));
     }
 }
 
@@ -328,20 +376,18 @@ void ANWProceduralWorldManager::BuildTerrain()
             const int32 I2 = I0 + VerticesPerSide;
             const int32 I3 = I2 + 1;
 
-            // Unreal considera o winding oposto ao usado aqui anteriormente para a
-            // face visivel do terreno. O antigo 0-1-2 deixava o chao visivel por baixo
-            // e invisivel para o jogador, embora a colisao funcionasse.
             Triangles.Add(I0); Triangles.Add(I2); Triangles.Add(I1);
             Triangles.Add(I1); Triangles.Add(I2); Triangles.Add(I3);
         }
     }
 
     TerrainMesh->CreateMeshSection_LinearColor(0, Vertices, Triangles, Normals, UV0, Colors, Tangents, true);
+    if (TerrainFallbackMaterial) { TerrainMesh->SetMaterial(0, TerrainFallbackMaterial); }
     TerrainMesh->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
     TerrainMesh->SetCollisionProfileName(TEXT("BlockAll"));
     TerrainMesh->bUseComplexAsSimpleCollision = true;
     TerrainMesh->RecreatePhysicsState();
-    UE_LOG(LogTemp, Display, TEXT("[TERRAIN] malha visivel criada: %d vertices | %d triangulos | winding corrigido."), Vertices.Num(), Triangles.Num() / 3);
+    UE_LOG(LogTemp, Display, TEXT("[TERRAIN] malha visivel criada: %d vertices | %d triangulos | material estavel."), Vertices.Num(), Triangles.Num() / 3);
 }
 
 void ANWProceduralWorldManager::BuildDecorations()
@@ -424,7 +470,7 @@ void ANWProceduralWorldManager::BuildSettlements()
             }
             else
             {
-                const FVector Scale(Random.FRandRange(2.4f, 4.2f), Random.FRandRange(2.2f, 3.8f), Random.FRandRange(2.2f, 4.8f));
+                const FVector Scale(Random.FRandRange(2.0f, 3.2f), Random.FRandRange(1.8f, 3.0f), Random.FRandRange(1.8f, 3.6f));
                 Buildings->AddInstance(FTransform(FRotator(0.0f, FMath::RadiansToDegrees(Angle) + 90.0f, 0.0f), FVector(X, Y, GroundZ + 50.0f * Scale.Z), Scale));
             }
         }
@@ -436,11 +482,11 @@ void ANWProceduralWorldManager::BuildSettlements()
             const float X = Center.X + FMath::Cos(Angle) * Radius;
             const float Y = Center.Y + FMath::Sin(Angle) * Radius;
             const float GroundZ = SampleHeight(X, Y);
-            Structures->AddInstance(FTransform(FRotator(0.0f, FMath::RadiansToDegrees(Angle) + 90.0f, 0.0f), FVector(X, Y, GroundZ + 150.0f), FVector(3.1f, 0.45f, 3.0f)));
+            Structures->AddInstance(FTransform(FRotator(0.0f, FMath::RadiansToDegrees(Angle) + 90.0f, 0.0f), FVector(X, Y, GroundZ + 115.0f), FVector(2.7f, 0.35f, 2.3f)));
         }
 
         const float TowerZ = SampleHeight(Center.X, Center.Y);
-        Structures->AddInstance(FTransform(FRotator::ZeroRotator, FVector(Center.X, Center.Y, TowerZ + 260.0f), FVector(4.0f, 4.0f, 5.2f)));
+        Structures->AddInstance(FTransform(FRotator::ZeroRotator, FVector(Center.X, Center.Y, TowerZ + 210.0f), FVector(3.2f, 3.2f, 4.2f)));
     }
 }
 

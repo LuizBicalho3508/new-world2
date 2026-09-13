@@ -91,8 +91,6 @@ private:
     void ApplyArchetypeStats();
     void SpawnProceduralLoot(AController* EventInstigator, AActor* DamageCauser);
     void SpawnLootItem(const FNWGeneratedItem& Item, const FVector& Offset);
-    void TryApplyLicensedCreatureVisual();
-    class USkeletalMesh* FindInstalledCreatureMesh(const TArray<FString>& Keywords) const;
 
     TWeakObjectPtr<AActor> CachedTarget;
     float NextTargetRefreshTime = -1000.0f;

@@ -8,10 +8,11 @@ GAME_MAP="/Engine/Maps/Entry?game=/Script/NewWorld2.NWGameMode"
 UE_ROOT="${UE_ROOT:-$HOME/Aplicativos/UnrealEngine-5.8}"
 MAX_PARALLEL_ACTIONS=3
 FPS_LIMIT=45
-RES_X=1920
-RES_Y=1080
+RES_X=1280
+RES_Y=720
 PROFILE=0
 USE_WORLD_PARTITION=0
+SKIP_BUILD=0
 
 while (($#)); do
     case "$1" in
@@ -27,6 +28,10 @@ while (($#)); do
             USE_WORLD_PARTITION=1
             shift
             ;;
+        --skip-build)
+            SKIP_BUILD=1
+            shift
+            ;;
         --fps)
             FPS_LIMIT="$2"
             shift 2
@@ -40,7 +45,7 @@ while (($#)); do
                 RES_X="${BASH_REMATCH[1]}"
                 RES_Y="${BASH_REMATCH[2]}"
             else
-                echo "Resolucao invalida: $2. Exemplo: 1920x1080" >&2
+                echo "Resolucao invalida: $2. Exemplo: 1600x900" >&2
                 exit 2
             fi
             shift 2
@@ -81,9 +86,8 @@ if ! git diff --quiet -- Config/DefaultInput.ini; then
     git checkout -- Config/DefaultInput.ini
 fi
 
-# Overrides dentro de Saved/Config sobrevivem entre builds e podem anular tanto
-# input quanto o novo perfil de renderizacao. Guardamos e retiramos apenas arquivos
-# gerados pelo runtime; nenhum asset do Content/ e removido.
+# Overrides de runtime podem anular tanto input quanto renderer. Preservamos uma
+# copia antes de remover apenas os INIs gerados; Content/Fab nunca e tocado.
 shopt -s nullglob
 for CONFIG_OVERRIDE in \
     "$PROJECT_DIR"/Saved/Config/Linux*/Input.ini \
@@ -115,8 +119,7 @@ if (( USE_WORLD_PARTITION )); then
         fi
     fi
 else
-    echo "[MAPA] Modo seguro: /Engine/Maps/Entry + mundo procedural runtime."
-    echo "[MAPA] World Partition fica opt-in com --world-partition ate o mapa autorado estar pronto."
+    echo "[MAPA] Vertical slice seguro: /Engine/Maps/Entry + mundo procedural runtime."
 fi
 
 echo "============================================================"
@@ -125,29 +128,31 @@ echo "============================================================"
 echo "Projeto : $PROJECT_DIR"
 echo "UE      : $UE_ROOT"
 echo "Mapa    : $GAME_MAP"
-echo "Build   : MaxParallelActions=$MAX_PARALLEL_ACTIONS"
+echo "Build   : $([[ $SKIP_BUILD -eq 1 ]] && echo PREVALIDADO || echo MaxParallelActions=$MAX_PARALLEL_ACTIONS)"
 echo "Video   : ${RES_X}x${RES_Y} Vulkan SM6 @ ${FPS_LIMIT} FPS"
 echo "Profile : $([[ $PROFILE -eq 1 ]] && echo SIM || echo NAO)"
 echo "Log     : $LOG_FILE"
 echo
 
-echo "[1/2] Build incremental NewWorld2Editor..."
-nice -n 5 "$BUILD_SH" NewWorld2Editor Linux Development "$PROJECT_FILE" \
-    -WaitMutex -NoHotReloadFromIDE "-MaxParallelActions=$MAX_PARALLEL_ACTIONS"
+if (( ! SKIP_BUILD )); then
+    echo "[1/2] Build incremental NewWorld2Editor..."
+    nice -n 5 "$BUILD_SH" NewWorld2Editor Linux Development "$PROJECT_FILE" \
+        -WaitMutex -NoHotReloadFromIDE "-MaxParallelActions=$MAX_PARALLEL_ACTIONS"
+else
+    echo "[1/2] Build ignorado: caller ja validou esta revisao."
+fi
 
 echo
 echo "[2/2] Abrindo game direto..."
 if (( PROFILE )); then
     EXEC_CMDS="t.MaxFPS $FPS_LIMIT,stat unit,stat game,stat gpu,stat fps"
 else
-    # Sem stat overlays por padrao. O overlay de profiling escondia quase toda a
-    # tela e adicionava trabalho exatamente no teste em que queremos avaliar UX.
     EXEC_CMDS="t.MaxFPS $FPS_LIMIT,stat none"
 fi
 
 set +e
 "$EDITOR" "$PROJECT_FILE" "$GAME_MAP" \
-    -game -log -stdout -FullStdOutLogOutput \
+    -game -log -stdout -FullStdOutLogOutput -NoSplash \
     -vulkan -sm6 -windowed -ResX="$RES_X" -ResY="$RES_Y" \
     -NoVSync "-ExecCmds=$EXEC_CMDS"
 RC=$?
