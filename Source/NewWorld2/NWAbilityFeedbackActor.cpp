@@ -23,6 +23,7 @@ ANWAbilityFeedbackActor::ANWAbilityFeedbackActor()
     PulseMesh->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     PulseMesh->SetGenerateOverlapEvents(false);
     PulseMesh->SetCastShadow(false);
+    PulseMesh->SetReceivesDecals(false);
 
     static ConstructorHelpers::FObjectFinder<UStaticMesh> SphereMesh(TEXT("/Engine/BasicShapes/Sphere.Sphere"));
     if (SphereMesh.Succeeded())
@@ -32,6 +33,7 @@ ANWAbilityFeedbackActor::ANWAbilityFeedbackActor()
 
     PulseLight = CreateDefaultSubobject<UPointLightComponent>(TEXT("PulseLight"));
     PulseLight->SetupAttachment(SceneRoot);
+    PulseLight->SetRelativeLocation(FVector(0.0f, 0.0f, 55.0f));
     PulseLight->SetCastShadows(false);
     PulseLight->SetAttenuationRadius(520.0f);
     PulseLight->SetIntensity(0.0f);
@@ -58,7 +60,7 @@ void ANWAbilityFeedbackActor::BeginPlay()
     if (PulseLight)
     {
         PulseLight->SetLightColor(FeedbackColor);
-        PulseLight->SetIntensity(3800.0f);
+        PulseLight->SetIntensity(2400.0f);
     }
 }
 
@@ -86,18 +88,21 @@ void ANWAbilityFeedbackActor::Tick(float DeltaSeconds)
     const float Alpha = FMath::Clamp(Elapsed / FMath::Max(0.01f, Duration), 0.0f, 1.0f);
     const float Ease = FMath::InterpEaseOut(0.0f, 1.0f, Alpha, 2.25f);
 
-    // Sphere do Engine mede ~100 cm. Escala cresce ate o raio visual desejado.
-    const float Scale = FMath::Lerp(0.08f, TargetRadius / 50.0f, Ease);
+    // A esfera e deliberadamente achatada para virar um pulso/telegraph de chao,
+    // evitando uma bolha opaca que esconda personagem e inimigos.
+    const float XYScale = FMath::Lerp(0.08f, TargetRadius / 50.0f, Ease);
+    const float ZScale = FMath::Lerp(0.018f, 0.035f, Ease);
     if (PulseMesh)
     {
-        PulseMesh->SetRelativeScale3D(FVector(Scale));
-        PulseMesh->SetVisibility(Alpha < 0.82f, true);
+        PulseMesh->SetRelativeLocation(FVector(0.0f, 0.0f, 3.0f));
+        PulseMesh->SetRelativeScale3D(FVector(XYScale, XYScale, ZScale));
+        PulseMesh->SetVisibility(Alpha < 0.72f, true);
     }
 
     if (PulseLight)
     {
-        PulseLight->SetIntensity(FMath::Lerp(3800.0f, 0.0f, Alpha));
-        PulseLight->SetAttenuationRadius(FMath::Max(260.0f, TargetRadius * 2.4f));
+        PulseLight->SetIntensity(FMath::Lerp(2400.0f, 0.0f, Alpha));
+        PulseLight->SetAttenuationRadius(FMath::Max(220.0f, TargetRadius * 1.8f));
     }
 
     if (Alpha >= 1.0f)
