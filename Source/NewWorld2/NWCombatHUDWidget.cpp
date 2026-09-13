@@ -14,9 +14,32 @@
 #include "NWCharacter.h"
 #include "NWCombatLibrary.h"
 
+namespace
+{
+    float SumAffix(const ANWCharacter* Character, ENWAffixType Type)
+    {
+        if (!Character) { return 0.0f; }
+        float Total = 0.0f;
+        auto Accumulate = [&Total, Type](const TArray<FNWGeneratedItem>& Items)
+        {
+            for (const FNWGeneratedItem& Item : Items)
+            {
+                for (const FNWItemAffix& Affix : Item.Affixes)
+                {
+                    if (Affix.Type == Type) { Total += Affix.Magnitude; }
+                }
+            }
+        };
+        Accumulate(Character->GetEquippedItems());
+        Accumulate(Character->GetEquippedWeaponItems());
+        return Total;
+    }
+}
+
 void UNWCombatHUDWidget::SetObservedCharacter(ANWCharacter* Character)
 {
     ObservedCharacter = Character;
+    BuildHUD();
     RefreshHUD();
 }
 
@@ -25,15 +48,16 @@ void UNWCombatHUDWidget::NativeConstruct()
     Super::NativeConstruct();
     BuildHUD();
     SetVisibility(ESlateVisibility::HitTestInvisible);
+    SetRenderOpacity(1.0f);
     RefreshHUD();
-    UE_LOG(LogTemp, Warning, TEXT("[HUD] CombatHUD construido e visivel."));
+    UE_LOG(LogTemp, Warning, TEXT("[HUD-V4] HUD completo construido: vida/stamina/poder/loadout/QER."));
 }
 
 void UNWCombatHUDWidget::NativeTick(const FGeometry& MyGeometry, float InDeltaTime)
 {
     Super::NativeTick(MyGeometry, InDeltaTime);
     RefreshAccumulator += InDeltaTime;
-    if (RefreshAccumulator >= 0.05f)
+    if (RefreshAccumulator >= 0.08f)
     {
         RefreshAccumulator = 0.0f;
         RefreshHUD();
@@ -59,45 +83,56 @@ void UNWCombatHUDWidget::BuildHUD()
     UCanvasPanel* Root = WidgetTree->ConstructWidget<UCanvasPanel>(UCanvasPanel::StaticClass(), TEXT("HUDRoot"));
     WidgetTree->RootWidget = Root;
 
+    // Painel principal sempre dentro da safe area superior esquerda. O V3 usava
+    // AddToViewport e em alguns layouts Linux o painel nao aparecia no player layer.
     UBorder* VitalsBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("VitalsBorder"));
-    VitalsBorder->SetPadding(FMargin(14.0f));
-    VitalsBorder->SetBrushColor(FLinearColor(0.015f, 0.02f, 0.025f, 0.82f));
+    VitalsBorder->SetPadding(FMargin(15.0f, 12.0f));
+    VitalsBorder->SetBrushColor(FLinearColor(0.008f, 0.012f, 0.020f, 0.91f));
     UCanvasPanelSlot* VitalsSlot = Root->AddChildToCanvas(VitalsBorder);
     VitalsSlot->SetAnchors(FAnchors(0.0f, 0.0f));
-    VitalsSlot->SetPosition(FVector2D(28.0f, 28.0f));
-    VitalsSlot->SetSize(FVector2D(580.0f, 305.0f));
+    VitalsSlot->SetPosition(FVector2D(22.0f, 22.0f));
+    VitalsSlot->SetSize(FVector2D(610.0f, 312.0f));
 
     UVerticalBox* VitalsBox = WidgetTree->ConstructWidget<UVerticalBox>(UVerticalBox::StaticClass());
     VitalsBorder->SetContent(VitalsBox);
 
-    WeaponText = MakeText(TEXT("ARMA"), 18);
+    WeaponText = MakeText(TEXT("ARMA ATIVA"), 18);
+    WeaponText->SetColorAndOpacity(FSlateColor(FLinearColor(0.96f, 0.78f, 0.38f, 1.0f)));
     VitalsBox->AddChildToVerticalBox(WeaponText);
 
-    HealthText = MakeText(TEXT("Vida"), 15);
+    HealthText = MakeText(TEXT("VIDA"), 15);
     VitalsBox->AddChildToVerticalBox(HealthText);
-    HealthBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass());
+    HealthBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("PlayerHealthBar"));
     HealthBar->SetPercent(1.0f);
-    HealthBar->SetFillColorAndOpacity(FLinearColor(0.80f, 0.08f, 0.06f, 1.0f));
-    VitalsBox->AddChildToVerticalBox(HealthBar);
+    HealthBar->SetFillColorAndOpacity(FLinearColor(0.82f, 0.055f, 0.04f, 1.0f));
+    UVerticalBoxSlot* HealthSlot = VitalsBox->AddChildToVerticalBox(HealthBar);
+    HealthSlot->SetPadding(FMargin(0.0f, 1.0f, 0.0f, 6.0f));
 
-    StaminaText = MakeText(TEXT("Stamina"), 15);
+    StaminaText = MakeText(TEXT("STAMINA"), 15);
     VitalsBox->AddChildToVerticalBox(StaminaText);
-    StaminaBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass());
+    StaminaBar = WidgetTree->ConstructWidget<UProgressBar>(UProgressBar::StaticClass(), TEXT("PlayerStaminaBar"));
     StaminaBar->SetPercent(1.0f);
-    StaminaBar->SetFillColorAndOpacity(FLinearColor(0.93f, 0.72f, 0.12f, 1.0f));
-    VitalsBox->AddChildToVerticalBox(StaminaBar);
+    StaminaBar->SetFillColorAndOpacity(FLinearColor(0.92f, 0.67f, 0.08f, 1.0f));
+    UVerticalBoxSlot* StaminaSlot = VitalsBox->AddChildToVerticalBox(StaminaBar);
+    StaminaSlot->SetPadding(FMargin(0.0f, 1.0f, 0.0f, 7.0f));
 
-    StateText = MakeText(TEXT("COMBATE PRONTO"), 14);
+    StatsText = MakeText(TEXT("PODER | ARMADURA | PRECISAO | HASTE"), 13);
+    StatsText->SetColorAndOpacity(FSlateColor(FLinearColor(0.72f, 0.86f, 1.0f, 1.0f)));
+    VitalsBox->AddChildToVerticalBox(StatsText);
+
+    StateText = MakeText(TEXT("COMBATE PRONTO"), 12);
+    StateText->SetColorAndOpacity(FSlateColor(FLinearColor(0.82f, 0.86f, 0.90f, 1.0f)));
     VitalsBox->AddChildToVerticalBox(StateText);
 
+    // Barra de habilidades action-RPG no centro inferior.
     UBorder* AbilityBorder = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("AbilityBorder"));
-    AbilityBorder->SetPadding(FMargin(12.0f));
-    AbilityBorder->SetBrushColor(FLinearColor(0.01f, 0.015f, 0.02f, 0.86f));
+    AbilityBorder->SetPadding(FMargin(10.0f));
+    AbilityBorder->SetBrushColor(FLinearColor(0.006f, 0.010f, 0.017f, 0.92f));
     UCanvasPanelSlot* AbilityCanvasSlot = Root->AddChildToCanvas(AbilityBorder);
     AbilityCanvasSlot->SetAnchors(FAnchors(0.5f, 1.0f));
     AbilityCanvasSlot->SetAlignment(FVector2D(0.5f, 1.0f));
-    AbilityCanvasSlot->SetPosition(FVector2D(0.0f, -28.0f));
-    AbilityCanvasSlot->SetSize(FVector2D(760.0f, 108.0f));
+    AbilityCanvasSlot->SetPosition(FVector2D(0.0f, -24.0f));
+    AbilityCanvasSlot->SetSize(FVector2D(840.0f, 116.0f));
 
     UHorizontalBox* AbilityRow = WidgetTree->ConstructWidget<UHorizontalBox>(UHorizontalBox::StaticClass());
     AbilityBorder->SetContent(AbilityRow);
@@ -108,7 +143,7 @@ void UNWCombatHUDWidget::BuildHUD()
     {
         UBorder* Card = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass());
         Card->SetPadding(FMargin(12.0f, 8.0f));
-        Card->SetBrushColor(FLinearColor(0.06f, 0.075f, 0.09f, 0.94f));
+        Card->SetBrushColor(FLinearColor(0.045f, 0.060f, 0.085f, 0.98f));
         UHorizontalBoxSlot* CardSlot = AbilityRow->AddChildToHorizontalBox(Card);
         CardSlot->SetPadding(FMargin(5.0f));
         CardSlot->SetSize(FSlateChildSize(ESlateSizeRule::Fill));
@@ -129,25 +164,25 @@ void UNWCombatHUDWidget::BuildHUD()
 
     CrosshairText = MakeText(TEXT("+"), 24);
     CrosshairText->SetJustification(ETextJustify::Center);
-    CrosshairText->SetColorAndOpacity(FSlateColor(FLinearColor(0.92f, 0.94f, 0.96f, 0.78f)));
+    CrosshairText->SetColorAndOpacity(FSlateColor(FLinearColor(0.96f, 0.96f, 0.94f, 0.82f)));
     UCanvasPanelSlot* CrosshairSlot = Root->AddChildToCanvas(CrosshairText);
     CrosshairSlot->SetAnchors(FAnchors(0.5f, 0.5f));
     CrosshairSlot->SetAlignment(FVector2D(0.5f, 0.5f));
     CrosshairSlot->SetPosition(FVector2D(0.0f, -8.0f));
     CrosshairSlot->SetSize(FVector2D(42.0f, 42.0f));
 
-    HelpText = MakeText(TEXT("LMB atacar  |  RMB bloquear/parry  |  ALT esquiva  |  Q/E/R skills  |  1/2 armas  |  G loot  |  I bag"), 12);
+    HelpText = MakeText(TEXT("LMB atacar | RMB defesa/parry | ALT esquiva | Q/E/R skills | 1/2 armas | F troca | G loot | I bag"), 11);
     HelpText->SetJustification(ETextJustify::Right);
-    HelpText->SetColorAndOpacity(FSlateColor(FLinearColor(0.78f, 0.82f, 0.86f, 0.90f)));
+    HelpText->SetColorAndOpacity(FSlateColor(FLinearColor(0.72f, 0.77f, 0.84f, 0.92f)));
     UCanvasPanelSlot* HelpSlot = Root->AddChildToCanvas(HelpText);
     HelpSlot->SetAnchors(FAnchors(1.0f, 1.0f));
     HelpSlot->SetAlignment(FVector2D(1.0f, 1.0f));
-    HelpSlot->SetPosition(FVector2D(-24.0f, -20.0f));
-    HelpSlot->SetSize(FVector2D(760.0f, 32.0f));
+    HelpSlot->SetPosition(FVector2D(-20.0f, -16.0f));
+    HelpSlot->SetSize(FVector2D(760.0f, 28.0f));
 
     InventoryPanel = WidgetTree->ConstructWidget<UBorder>(UBorder::StaticClass(), TEXT("InventoryPanel"));
     InventoryPanel->SetPadding(FMargin(22.0f));
-    InventoryPanel->SetBrushColor(FLinearColor(0.008f, 0.012f, 0.018f, 0.96f));
+    InventoryPanel->SetBrushColor(FLinearColor(0.005f, 0.009f, 0.015f, 0.97f));
     InventoryPanel->SetVisibility(ESlateVisibility::Collapsed);
     UCanvasPanelSlot* InventorySlot = Root->AddChildToCanvas(InventoryPanel);
     InventorySlot->SetAnchors(FAnchors(0.5f, 0.5f));
@@ -166,57 +201,64 @@ void UNWCombatHUDWidget::BuildHUD()
 void UNWCombatHUDWidget::RefreshHUD()
 {
     ANWCharacter* Character = ObservedCharacter.Get();
-    if (!Character || !HealthBar || !WeaponText) { return; }
+    if (!Character || !HealthBar || !StaminaBar || !WeaponText || !StatsText) { return; }
 
     const float MaxHealth = FMath::Max(1.0f, Character->GetMaxHealth());
     const float MaxStamina = FMath::Max(1.0f, Character->GetMaxStamina());
-    HealthBar->SetPercent(Character->GetHealth() / MaxHealth);
-    StaminaBar->SetPercent(Character->GetStamina() / MaxStamina);
-    HealthText->SetText(FText::FromString(FString::Printf(TEXT("VIDA  %.0f / %.0f"), Character->GetHealth(), MaxHealth)));
+    HealthBar->SetPercent(FMath::Clamp(Character->GetHealth() / MaxHealth, 0.0f, 1.0f));
+    StaminaBar->SetPercent(FMath::Clamp(Character->GetStamina() / MaxStamina, 0.0f, 1.0f));
+    HealthText->SetText(FText::FromString(FString::Printf(TEXT("VIDA     %.0f / %.0f"), Character->GetHealth(), MaxHealth)));
     StaminaText->SetText(FText::FromString(FString::Printf(TEXT("STAMINA  %.0f / %.0f"), Character->GetStamina(), MaxStamina)));
 
     const FNWWeaponDefinition Primary = NWCombat::GetWeaponDefinition(Character->GetPrimaryWeapon());
     const FNWWeaponDefinition Secondary = NWCombat::GetWeaponDefinition(Character->GetSecondaryWeapon());
-    FString WeaponInfo = FString::Printf(TEXT("[1] %s   |   [2] %s\nATIVA: %s"), *Primary.Name, *Secondary.Name, *Character->GetActiveWeaponName());
+    const FNWWeaponDefinition Active = NWCombat::GetWeaponDefinition(Character->GetActiveWeapon());
+
+    FString WeaponInfo = FString::Printf(TEXT("ATIVA: %s\n[1] %s   |   [2] %s"), *Active.Name, *Primary.Name, *Secondary.Name);
     if (Character->GetActiveWeapon() == ENWWeaponType::Bow)
     {
-        WeaponInfo += FString::Printf(TEXT("   |   [V] FLECHA: %s"), *Character->GetArrowElementLabel());
+        WeaponInfo += FString::Printf(TEXT("   |   [V] %s"), *Character->GetArrowElementLabel());
     }
-
-    WeaponInfo += TEXT("\nPASSIVAS SLOT 1: ");
-    for (int32 Index = 0; Index < Primary.Passives.Num(); ++Index)
+    WeaponInfo += TEXT("\nPASSIVAS: ");
+    for (int32 Index = 0; Index < Active.Passives.Num(); ++Index)
     {
         if (Index > 0) { WeaponInfo += TEXT(" | "); }
-        WeaponInfo += Primary.Passives[Index].Name;
-    }
-    WeaponInfo += TEXT("\nPASSIVAS SLOT 2: ");
-    for (int32 Index = 0; Index < Secondary.Passives.Num(); ++Index)
-    {
-        if (Index > 0) { WeaponInfo += TEXT(" | "); }
-        WeaponInfo += Secondary.Passives[Index].Name;
+        WeaponInfo += Active.Passives[Index].Name;
     }
     WeaponText->SetText(FText::FromString(WeaponInfo));
+
+    const float Power = SumAffix(Character, ENWAffixType::Power);
+    const float Armor = SumAffix(Character, ENWAffixType::Armor);
+    const float Precision = SumAffix(Character, ENWAffixType::Precision);
+    const float Haste = SumAffix(Character, ENWAffixType::Haste);
+    const float LifeSteal = SumAffix(Character, ENWAffixType::LifeSteal);
+    StatsText->SetText(FText::FromString(FString::Printf(
+        TEXT("PODER %.1f   |   ARMADURA %.1f   |   PRECISAO %.1f   |   HASTE %.1f   |   ROUBO VIDA %.1f"),
+        Power, Armor, Precision, Haste, LifeSteal)));
 
     FString State = Character->GetCombatStateLabel();
     if (Character->IsBrutalTransformationActive())
     {
-        State += TEXT(" | METAMORFOSE ATIVA");
+        State += FString::Printf(TEXT(" | BRUTAL %.0fs"), Character->GetBrutalTransformationRemaining());
     }
-    State += FString::Printf(TEXT("\n[T] Destino: %s   [Y] TELEPORTAR   [I] BAG"), *Character->GetSelectedFastTravelLabel());
+    State += FString::Printf(TEXT("\n[T] %s  [Y] VIAJAR  [I] BAG"), *Character->GetSelectedFastTravelLabel());
     StateText->SetText(FText::FromString(State));
 
-    const FNWWeaponDefinition Weapon = NWCombat::GetWeaponDefinition(Character->GetActiveWeapon());
     const TCHAR* Keys[3] = { TEXT("Q"), TEXT("E"), TEXT("R") };
-    for (int32 Index = 0; Index < AbilityTexts.Num() && Index < Weapon.Abilities.Num(); ++Index)
+    for (int32 Index = 0; Index < AbilityTexts.Num() && Index < Active.Abilities.Num(); ++Index)
     {
         const float Remaining = Character->GetAbilityCooldownRemaining(Index);
         const FString Status = Remaining <= 0.01f ? TEXT("PRONTO") : FString::Printf(TEXT("%.1fs"), Remaining);
-        AbilityTexts[Index]->SetText(FText::FromString(FString::Printf(TEXT("[%s] %s\n%s"), Keys[Index], *Weapon.Abilities[Index].Name, *Status)));
-        AbilityTexts[Index]->SetColorAndOpacity(FSlateColor(Remaining <= 0.01f ? FLinearColor::White : FLinearColor(0.48f, 0.52f, 0.58f, 1.0f)));
+        AbilityTexts[Index]->SetText(FText::FromString(FString::Printf(TEXT("[%s] %s\n%s"), Keys[Index], *Active.Abilities[Index].Name, *Status)));
+        AbilityTexts[Index]->SetColorAndOpacity(FSlateColor(
+            Remaining <= 0.01f ? FLinearColor(0.96f, 0.96f, 0.96f, 1.0f) : FLinearColor(0.43f, 0.48f, 0.56f, 1.0f)));
     }
 
     const FString NearbyLoot = Character->GetNearbyLootLabel();
-    LootPromptText->SetText(FText::FromString(NearbyLoot.IsEmpty() ? TEXT("") : FString::Printf(TEXT("[G] Coletar  %s"), *NearbyLoot)));
+    if (LootPromptText)
+    {
+        LootPromptText->SetText(FText::FromString(NearbyLoot.IsEmpty() ? TEXT("") : FString::Printf(TEXT("[G] COLETAR  %s"), *NearbyLoot)));
+    }
 
     if (bInventoryVisible) { RefreshInventory(); }
 }
