@@ -3,11 +3,13 @@
 #include "Engine/World.h"
 #include "EngineUtils.h"
 #include "GameFramework/Controller.h"
+#include "Kismet/GameplayStatics.h"
 #include "NWCharacter.h"
 #include "NWContentPresentationManager.h"
 #include "NWFabExpansionPresentationManager.h"
 #include "NWProceduralWorldManager.h"
 #include "NWWorldEventDirector.h"
+#include "ProceduralMeshComponent.h"
 
 ANWGameMode::ANWGameMode()
 {
@@ -81,16 +83,39 @@ ANWProceduralWorldManager* ANWGameMode::EnsureWorldManager()
     for (TActorIterator<ANWProceduralWorldManager> It(GetWorld()); It; ++It)
     {
         WorldManager = *It;
+        if (UProceduralMeshComponent* Terrain = WorldManager->FindComponentByClass<UProceduralMeshComponent>())
+        {
+            Terrain->bUseAsyncCooking = false;
+            Terrain->bUseComplexAsSimpleCollision = true;
+            Terrain->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+            Terrain->SetCollisionProfileName(TEXT("BlockAll"));
+        }
         return WorldManager;
     }
 
-    FActorSpawnParameters SpawnParams;
-    SpawnParams.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-    WorldManager = GetWorld()->SpawnActor<ANWProceduralWorldManager>(
+    const FTransform ManagerTransform(FRotator::ZeroRotator, FVector::ZeroVector);
+    WorldManager = GetWorld()->SpawnActorDeferred<ANWProceduralWorldManager>(
         ANWProceduralWorldManager::StaticClass(),
-        FVector::ZeroVector,
-        FRotator::ZeroRotator,
-        SpawnParams);
+        ManagerTransform,
+        this,
+        nullptr,
+        ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
 
+    if (!WorldManager)
+    {
+        return nullptr;
+    }
+
+    // O terreno procedural e pequeno (65x65 vertices), entao cooking sincrono e barato
+    // e evita o player nascer antes da colisao fisica estar pronta.
+    if (UProceduralMeshComponent* Terrain = WorldManager->FindComponentByClass<UProceduralMeshComponent>())
+    {
+        Terrain->bUseAsyncCooking = false;
+        Terrain->bUseComplexAsSimpleCollision = true;
+        Terrain->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
+        Terrain->SetCollisionProfileName(TEXT("BlockAll"));
+    }
+
+    UGameplayStatics::FinishSpawningActor(WorldManager, ManagerTransform);
     return WorldManager;
 }
