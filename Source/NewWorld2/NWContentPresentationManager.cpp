@@ -22,7 +22,7 @@
 ANWContentPresentationManager::ANWContentPresentationManager()
 {
     PrimaryActorTick.bCanEverTick = true;
-    PrimaryActorTick.TickInterval = 0.10f;
+    PrimaryActorTick.TickInterval = 0.15f;
     bReplicates = true;
     bAlwaysRelevant = true;
     SetReplicateMovement(false);
@@ -76,14 +76,19 @@ void ANWContentPresentationManager::ScanProjectAssets()
     AnimFilter.bRecursivePaths = true;
     Registry.GetAssets(AnimFilter, AnimBlueprintAssets);
 
-    FARFilter NiagaraFilter;
-    NiagaraFilter.PackagePaths.Add(FName(TEXT("/Game")));
-    NiagaraFilter.ClassPaths.Add(UNiagaraSystem::StaticClass()->GetClassPathName());
-    NiagaraFilter.bRecursivePaths = true;
-    Registry.GetAssets(NiagaraFilter, NiagaraAssets);
+    NiagaraAssets.Reset();
+    if (bEnableNiagaraPresentation)
+    {
+        FARFilter NiagaraFilter;
+        NiagaraFilter.PackagePaths.Add(FName(TEXT("/Game")));
+        NiagaraFilter.ClassPaths.Add(UNiagaraSystem::StaticClass()->GetClassPathName());
+        NiagaraFilter.bRecursivePaths = true;
+        Registry.GetAssets(NiagaraFilter, NiagaraAssets);
+    }
 
-    UE_LOG(LogTemp, Warning, TEXT("[FAB] Catalogo /Game: StaticMesh=%d | SkeletalMesh=%d | AnimBP=%d | Niagara=%d"),
-        StaticMeshAssets.Num(), SkeletalMeshAssets.Num(), AnimBlueprintAssets.Num(), NiagaraAssets.Num());
+    UE_LOG(LogTemp, Warning, TEXT("[FAB] Catalogo visual: StaticMesh=%d | SkeletalMesh=%d | AnimBP=%d | Niagara=%d (%s)"),
+        StaticMeshAssets.Num(), SkeletalMeshAssets.Num(), AnimBlueprintAssets.Num(), NiagaraAssets.Num(),
+        bEnableNiagaraPresentation ? TEXT("ativo") : TEXT("desativado para estabilidade"));
 }
 
 void ANWContentPresentationManager::ReportDetectedLibraryContent()
@@ -99,7 +104,12 @@ void ANWContentPresentationManager::ReportDetectedLibraryContent()
     ReportKeywords(TEXT("Medieval Knight Shield"), { TEXT("Shield") });
     ReportKeywords(TEXT("Modular Medieval Armor"), { TEXT("Armor") });
 
-    static const TCHAR* ParagonHeroes[] = { TEXT("Sevarog"), TEXT("Rampage"), TEXT("Khaimera"), TEXT("Countess"), TEXT("Revenant") };
+    // Precarrega apenas herois explicitamente conhecidos. Isso e deterministico e
+    // evita procurar/compilar uma criatura arbitraria no meio do combate.
+    static const TCHAR* ParagonHeroes[] = {
+        TEXT("Grux"), TEXT("Sevarog"), TEXT("Rampage"), TEXT("Khaimera"),
+        TEXT("Countess"), TEXT("Revenant")
+    };
     for (const TCHAR* HeroName : ParagonHeroes)
     {
         USkeletalMesh* Mesh = nullptr;
@@ -177,46 +187,116 @@ void ANWContentPresentationManager::ApplyWeaponPresentation(ANWCharacter* Charac
     Left->SetVisibility(false, true);
     Right->SetStaticMesh(nullptr);
     Left->SetStaticMesh(nullptr);
+    Right->SetRelativeTransform(FTransform::Identity);
+    Left->SetRelativeTransform(FTransform::Identity);
 
-    TArray<FString> Preferred;
+    TArray<FString> Preferred = {
+        TEXT("Realistic"), TEXT("PBR"), TEXT("Medieval"), TEXT("Steel"), TEXT("Iron"),
+        TEXT("Historical"), TEXT("GameReady"), TEXT("Game_Ready"), TEXT("Weapon")
+    };
     if (!StyleId.IsNone()) { Preferred.Add(StyleId.ToString()); }
-    Preferred.Add(TEXT("Weapon"));
-    Preferred.Add(TEXT("Melee"));
-    Preferred.Add(TEXT("Fantasy"));
 
     UStaticMesh* PrimaryMesh = FindBestStaticMesh(GetWeaponMeshKeywords(WeaponType), Preferred);
     if (!PrimaryMesh)
     {
-        UE_LOG(LogTemp, Display, TEXT("[VISUAL] Sem mesh instalado para %s (%s). Mantendo combate funcional sem arma visual."),
+        PrimaryMesh = GetFallbackWeaponMesh(WeaponType);
+    }
+
+    if (!PrimaryMesh)
+    {
+        UE_LOG(LogTemp, Display, TEXT("[VISUAL] Sem mesh confiavel para %s (%s); slot visual oculto sem afetar gameplay."),
             *NWCombat::WeaponTypeToString(WeaponType), *StyleId.ToString());
         return;
     }
 
-    Right->AttachToComponent(Character->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, FindHandSocket(Character, true));
-    Right->SetRelativeTransform(FTransform::Identity);
-    Right->SetStaticMesh(PrimaryMesh);
-    Right->SetVisibility(true, true);
+    ConfigureWeaponComponent(Character, Right, PrimaryMesh, WeaponType, true);
 
     if (WeaponType == ENWWeaponType::DualSwords || WeaponType == ENWWeaponType::Daggers)
     {
-        Left->AttachToComponent(Character->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, FindHandSocket(Character, false));
-        Left->SetRelativeTransform(FTransform::Identity);
-        Left->SetStaticMesh(PrimaryMesh);
-        Left->SetVisibility(true, true);
+        ConfigureWeaponComponent(Character, Left, PrimaryMesh, WeaponType, false);
     }
     else if (WeaponType == ENWWeaponType::SwordShield)
     {
-        UStaticMesh* ShieldMesh = FindBestStaticMesh({ TEXT("Shield"), TEXT("Aegis"), TEXT("Buckler") }, { TEXT("Knight"), TEXT("Medieval"), TEXT("Fantasy") });
+        UStaticMesh* ShieldMesh = FindBestStaticMesh(
+            { TEXT("Shield"), TEXT("Aegis"), TEXT("Buckler") },
+            { TEXT("Realistic"), TEXT("PBR"), TEXT("Knight"), TEXT("Medieval"), TEXT("Iron"), TEXT("Wood") });
         if (ShieldMesh)
         {
-            Left->AttachToComponent(Character->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, FindHandSocket(Character, false));
-            Left->SetRelativeTransform(FTransform::Identity);
-            Left->SetStaticMesh(ShieldMesh);
-            Left->SetVisibility(true, true);
+            ConfigureWeaponComponent(Character, Left, ShieldMesh, WeaponType, false);
         }
     }
 
-    UE_LOG(LogTemp, Display, TEXT("[VISUAL] %s -> %s"), *NWCombat::WeaponTypeToString(WeaponType), *PrimaryMesh->GetPathName());
+    UE_LOG(LogTemp, Display, TEXT("[VISUAL] %s estabilizada -> %s | escala aplicada uma unica vez"),
+        *NWCombat::WeaponTypeToString(WeaponType), *PrimaryMesh->GetPathName());
+}
+
+void ANWContentPresentationManager::ConfigureWeaponComponent(
+    ANWCharacter* Character,
+    UStaticMeshComponent* Component,
+    UStaticMesh* Mesh,
+    ENWWeaponType WeaponType,
+    bool bRightHand) const
+{
+    if (!Character || !Character->GetMesh() || !Component || !Mesh) { return; }
+
+    const FName Socket = FindHandSocket(Character, bRightHand);
+    Component->AttachToComponent(Character->GetMesh(), FAttachmentTransformRules::SnapToTargetNotIncludingScale, Socket);
+    Component->SetStaticMesh(Mesh);
+    Component->SetRelativeLocation(FVector::ZeroVector);
+    Component->SetRelativeRotation(FRotator::ZeroRotator);
+    Component->SetRelativeScale3D(FVector(ComputeUniformMeshScale(Mesh, GetWeaponTargetDimension(WeaponType, bRightHand))));
+    Component->SetVisibility(true, true);
+}
+
+UStaticMesh* ANWContentPresentationManager::GetFallbackWeaponMesh(ENWWeaponType WeaponType) const
+{
+    // Apenas fallbacks cuja forma ainda comunica a arma sem ocupar a tela inteira.
+    // Espadas/arcos continuam ocultos se nenhum asset apropriado existir.
+    if (WeaponType == ENWWeaponType::Staff)
+    {
+        return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+    }
+    if (WeaponType == ENWWeaponType::Daggers)
+    {
+        return LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cone.Cone"));
+    }
+    return nullptr;
+}
+
+float ANWContentPresentationManager::GetWeaponTargetDimension(ENWWeaponType WeaponType, bool bRightHand) const
+{
+    switch (WeaponType)
+    {
+        case ENWWeaponType::Staff: return 185.0f;
+        case ENWWeaponType::Greatsword: return 155.0f;
+        case ENWWeaponType::DualSwords: return 105.0f;
+        case ENWWeaponType::SwordShield: return bRightHand ? 105.0f : 72.0f;
+        case ENWWeaponType::Daggers: return 55.0f;
+        case ENWWeaponType::Bow: return 140.0f;
+        case ENWWeaponType::Firearm: return 125.0f;
+        default: return 110.0f;
+    }
+}
+
+float ANWContentPresentationManager::ComputeUniformMeshScale(UStaticMesh* Mesh, float TargetMaxDimension) const
+{
+    if (!Mesh) { return 1.0f; }
+    const FBoxSphereBounds Bounds = Mesh->GetBounds();
+    const float SizeX = static_cast<float>(Bounds.BoxExtent.X * 2.0);
+    const float SizeY = static_cast<float>(Bounds.BoxExtent.Y * 2.0);
+    const float SizeZ = static_cast<float>(Bounds.BoxExtent.Z * 2.0);
+    const float MaxDimension = FMath::Max(SizeX, FMath::Max(SizeY, SizeZ));
+    if (!FMath::IsFinite(MaxDimension) || MaxDimension <= 1.0f) { return 1.0f; }
+    return FMath::Clamp(TargetMaxDimension / MaxDimension, 0.02f, 4.0f);
+}
+
+float ANWContentPresentationManager::ComputeSkeletalScale(USkeletalMesh* Mesh, float TargetHeight) const
+{
+    if (!Mesh) { return 1.0f; }
+    const FBoxSphereBounds Bounds = Mesh->GetImportedBounds();
+    const float Height = static_cast<float>(Bounds.BoxExtent.Z * 2.0);
+    if (!FMath::IsFinite(Height) || Height <= 1.0f) { return 1.0f; }
+    return FMath::Clamp(TargetHeight / Height, 0.20f, 2.5f);
 }
 
 void ANWContentPresentationManager::ApplyArmorPresentation(ANWCharacter* Character, FPlayerVisualState& State)
@@ -255,27 +335,32 @@ void ANWContentPresentationManager::ApplyArmorPresentation(ANWCharacter* Charact
 
 void ANWContentPresentationManager::UpdateBrutalPresentation(ANWCharacter* Character, FPlayerVisualState& State)
 {
-    UNiagaraComponent* Aura = EnsureBrutalAura(Character, State);
     UPointLightComponent* Light = EnsureBrutalLight(Character, State);
-    if (!Aura || !Light) { return; }
+    if (!Light) { return; }
+
+    UNiagaraComponent* Aura = nullptr;
+    if (bEnableNiagaraPresentation)
+    {
+        Aura = EnsureBrutalAura(Character, State);
+    }
 
     const bool bActive = Character->IsBrutalTransformationActive();
     if (bActive)
     {
-        if (!Aura->GetAsset())
+        if (Aura && !Aura->GetAsset())
         {
             Aura->SetAsset(FindBestNiagara(
                 { TEXT("Aura"), TEXT("Power"), TEXT("Rage"), TEXT("Energy"), TEXT("Buff") },
                 { TEXT("Legendary"), TEXT("Brutal"), TEXT("Fire"), TEXT("Lightning") }));
         }
-        if (Aura->GetAsset()) { Aura->Activate(true); }
+        if (Aura && Aura->GetAsset()) { Aura->Activate(true); }
         Light->SetLightColor(FLinearColor(1.0f, 0.14f, 0.02f));
-        Light->SetIntensity(5200.0f);
-        Character->GetMesh()->SetRelativeScale3D(FVector(1.08f));
+        Light->SetIntensity(2400.0f);
+        Character->GetMesh()->SetRelativeScale3D(FVector(1.06f));
     }
     else
     {
-        Aura->Deactivate();
+        if (Aura) { Aura->Deactivate(); }
         Light->SetIntensity(0.0f);
         Character->GetMesh()->SetRelativeScale3D(FVector(1.0f));
     }
@@ -321,16 +406,19 @@ void ANWContentPresentationManager::SpawnBowProjectilePresentation(ANWCharacter*
         CachedArrowMesh = FindBestStaticMesh({ TEXT("Arrow"), TEXT("Projectile") }, { TEXT("Ethereal"), TEXT("Recurve"), TEXT("Bow"), TEXT("Weapon") });
     }
 
-    const uint8 ElementKey = static_cast<uint8>(Character->GetArrowElement());
     UNiagaraSystem* TrailSystem = nullptr;
-    if (TWeakObjectPtr<UNiagaraSystem>* Cached = CachedArrowTrails.Find(ElementKey))
+    if (bEnableNiagaraPresentation)
     {
-        TrailSystem = Cached->Get();
-    }
-    if (!TrailSystem)
-    {
-        TrailSystem = FindBestNiagara(GetArrowElementKeywords(Character->GetArrowElement()), { TEXT("Arrow"), TEXT("Projectile"), TEXT("Trail") });
-        CachedArrowTrails.Add(ElementKey, TrailSystem);
+        const uint8 ElementKey = static_cast<uint8>(Character->GetArrowElement());
+        if (TWeakObjectPtr<UNiagaraSystem>* Cached = CachedArrowTrails.Find(ElementKey))
+        {
+            TrailSystem = Cached->Get();
+        }
+        if (!TrailSystem)
+        {
+            TrailSystem = FindBestNiagara(GetArrowElementKeywords(Character->GetArrowElement()), { TEXT("Arrow"), TEXT("Projectile"), TEXT("Trail") });
+            CachedArrowTrails.Add(ElementKey, TrailSystem);
+        }
     }
 
     FVector Origin = Character->GetActorLocation() + FVector(0.0f, 0.0f, 95.0f) + Character->GetActorForwardVector() * 75.0f;
@@ -367,59 +455,54 @@ void ANWContentPresentationManager::ApplyEnemyPresentation(ANWEnemy* Enemy)
     {
         const int32 Variant = static_cast<int32>(Enemy->GetUniqueID() % 5u);
         static const TCHAR* BossHeroes[] = { TEXT("Rampage"), TEXT("Sevarog"), TEXT("Khaimera"), TEXT("Countess"), TEXT("Revenant") };
-        const FString PreferredHero = BossHeroes[Variant];
-        TryLoadParagonHero(PreferredHero, Mesh, AnimClass);
-
-        if (!Mesh)
-        {
-            Mesh = FindBestSkeletalMesh({ TEXT("Boss"), TEXT("Monster"), TEXT("Demon"), TEXT("Warlord") }, { TEXT("Enemy"), TEXT("Creature") }, true, &AnimClass);
-        }
+        TryLoadParagonHero(FString(BossHeroes[Variant]), Mesh, AnimClass);
     }
     else if (Enemy->GetEnemyArchetype() == ENWEnemyArchetype::Zombie)
     {
-        Mesh = FindBestSkeletalMesh({ TEXT("Zombie"), TEXT("Undead"), TEXT("Ghoul") }, { TEXT("Enemy"), TEXT("Character"), TEXT("Monster") }, true, &AnimClass);
-        if (!Mesh)
+        if (!TryLoadParagonHero(TEXT("Revenant"), Mesh, AnimClass))
         {
-            if (!TryLoadParagonHero(TEXT("Revenant"), Mesh, AnimClass)) { TryLoadParagonHero(TEXT("Khaimera"), Mesh, AnimClass); }
+            TryLoadParagonHero(TEXT("Khaimera"), Mesh, AnimClass);
         }
     }
     else if (Enemy->GetEnemyArchetype() == ENWEnemyArchetype::Ghost)
     {
-        Mesh = FindBestSkeletalMesh({ TEXT("Ghost"), TEXT("Wraith"), TEXT("Specter"), TEXT("Spirit") }, { TEXT("Enemy"), TEXT("Character"), TEXT("Monster") }, true, &AnimClass);
-        if (!Mesh)
+        if (!TryLoadParagonHero(TEXT("Sevarog"), Mesh, AnimClass))
         {
-            if (!TryLoadParagonHero(TEXT("Sevarog"), Mesh, AnimClass)) { TryLoadParagonHero(TEXT("Countess"), Mesh, AnimClass); }
+            TryLoadParagonHero(TEXT("Countess"), Mesh, AnimClass);
         }
     }
     else
     {
+        TryLoadParagonHero(TEXT("Grux"), Mesh, AnimClass);
+    }
+
+    if (!Mesh)
+    {
+        UE_LOG(LogTemp, Display, TEXT("[MONSTRO-VISUAL] %s sem pack curado; fallback de capsule mantido."), *Enemy->GetName());
         return;
     }
 
-    if (!Mesh) { return; }
-
-    if (!AnimClass) { AnimClass = FindAnimationClassForMesh(Mesh, {}); }
     Enemy->GetMesh()->SetSkeletalMeshAsset(Mesh);
     if (AnimClass)
     {
         Enemy->GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
         Enemy->GetMesh()->SetAnimInstanceClass(AnimClass);
     }
-    Enemy->GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, Enemy->IsWorldBoss() ? -112.0f : -90.0f));
+
+    const bool bBoss = Enemy->IsWorldBoss();
+    const float TargetHeight = bBoss ? 315.0f : 188.0f;
+    Enemy->GetMesh()->SetRelativeLocation(FVector(0.0f, 0.0f, bBoss ? -112.0f : -90.0f));
     Enemy->GetMesh()->SetRelativeRotation(FRotator(0.0f, -90.0f, 0.0f));
-    Enemy->GetMesh()->SetRelativeScale3D(Enemy->IsWorldBoss() ? FVector(1.18f) : FVector(1.0f));
+    Enemy->GetMesh()->SetRelativeScale3D(FVector(ComputeSkeletalScale(Mesh, TargetHeight)));
     Enemy->GetMesh()->SetVisibility(true, true);
     HideEnemyDebugMeshes(Enemy);
 
-    UE_LOG(LogTemp, Warning, TEXT("[MONSTRO-VISUAL] %s%s -> %s"),
-        Enemy->IsWorldBoss() ? TEXT("BOSS ") : TEXT(""),
-        Enemy->GetEnemyArchetype() == ENWEnemyArchetype::Zombie ? TEXT("Zumbi") : Enemy->GetEnemyArchetype() == ENWEnemyArchetype::Ghost ? TEXT("Fantasma") : TEXT("Bruto"),
-        *Mesh->GetPathName());
+    UE_LOG(LogTemp, Display, TEXT("[MONSTRO-VISUAL] %s -> %s | escala deterministica"), *Enemy->GetName(), *Mesh->GetPathName());
 }
 
 UStaticMesh* ANWContentPresentationManager::FindBestStaticMesh(const TArray<FString>& PrimaryKeywords, const TArray<FString>& PreferredKeywords) const
 {
-    int32 BestScore = 0;
+    int32 BestScore = TNumericLimits<int32>::Lowest();
     UStaticMesh* BestMesh = nullptr;
     for (const FAssetData& Asset : StaticMeshAssets)
     {
@@ -432,12 +515,12 @@ UStaticMesh* ANWContentPresentationManager::FindBestStaticMesh(const TArray<FStr
             BestMesh = Mesh;
         }
     }
-    return BestMesh;
+    return BestScore > 0 ? BestMesh : nullptr;
 }
 
 USkeletalMesh* ANWContentPresentationManager::FindBestSkeletalMesh(const TArray<FString>& PrimaryKeywords, const TArray<FString>& PreferredKeywords, bool bRequireAnimation, UClass** OutAnimationClass) const
 {
-    int32 BestScore = 0;
+    int32 BestScore = TNumericLimits<int32>::Lowest();
     USkeletalMesh* BestMesh = nullptr;
     UClass* BestAnimClass = nullptr;
 
@@ -449,16 +532,16 @@ USkeletalMesh* ANWContentPresentationManager::FindBestSkeletalMesh(const TArray<
 
         USkeletalMesh* Mesh = Cast<USkeletalMesh>(Asset.GetAsset());
         if (!Mesh) { continue; }
-        UClass* AnimClass = FindAnimationClassForMesh(Mesh, PreferredKeywords);
-        if (bRequireAnimation && !AnimClass) { continue; }
+        UClass* CandidateAnimClass = FindAnimationClassForMesh(Mesh, PreferredKeywords);
+        if (bRequireAnimation && !CandidateAnimClass) { continue; }
 
         BestScore = Score;
         BestMesh = Mesh;
-        BestAnimClass = AnimClass;
+        BestAnimClass = CandidateAnimClass;
     }
 
     if (OutAnimationClass) { *OutAnimationClass = BestAnimClass; }
-    return BestMesh;
+    return BestScore > 0 ? BestMesh : nullptr;
 }
 
 USkeletalMesh* ANWContentPresentationManager::FindCompatibleArmorMesh(ANWCharacter* Character, const FNWGeneratedItem& Item) const
@@ -467,10 +550,13 @@ USkeletalMesh* ANWContentPresentationManager::FindCompatibleArmorMesh(ANWCharact
     USkeleton* BaseSkeleton = Character->GetMesh()->GetSkeletalMeshAsset()->GetSkeleton();
     if (!BaseSkeleton) { return nullptr; }
 
-    TArray<FString> Preferred = { TEXT("Armor"), TEXT("Armour"), TEXT("Modular"), TEXT("Medieval"), TEXT("Knight") };
+    TArray<FString> Preferred = {
+        TEXT("Realistic"), TEXT("PBR"), TEXT("Armor"), TEXT("Armour"), TEXT("Modular"),
+        TEXT("Medieval"), TEXT("Knight"), TEXT("Plate"), TEXT("Chainmail")
+    };
     if (!Item.StyleId.IsNone()) { Preferred.Add(Item.StyleId.ToString()); }
 
-    int32 BestScore = 0;
+    int32 BestScore = TNumericLimits<int32>::Lowest();
     USkeletalMesh* BestMesh = nullptr;
     for (const FAssetData& Asset : SkeletalMeshAssets)
     {
@@ -483,14 +569,14 @@ USkeletalMesh* ANWContentPresentationManager::FindCompatibleArmorMesh(ANWCharact
         BestScore = Score;
         BestMesh = Mesh;
     }
-    return BestMesh;
+    return BestScore > 0 ? BestMesh : nullptr;
 }
 
 UClass* ANWContentPresentationManager::FindAnimationClassForMesh(USkeletalMesh* Mesh, const TArray<FString>& PreferredKeywords) const
 {
     if (!Mesh || !Mesh->GetSkeleton()) { return nullptr; }
 
-    int32 BestScore = -1;
+    int32 BestScore = TNumericLimits<int32>::Lowest();
     UClass* BestClass = nullptr;
     for (const FAssetData& Asset : AnimBlueprintAssets)
     {
@@ -510,7 +596,9 @@ UClass* ANWContentPresentationManager::FindAnimationClassForMesh(USkeletalMesh* 
 
 UNiagaraSystem* ANWContentPresentationManager::FindBestNiagara(const TArray<FString>& PrimaryKeywords, const TArray<FString>& PreferredKeywords) const
 {
-    int32 BestScore = 0;
+    if (!bEnableNiagaraPresentation) { return nullptr; }
+
+    int32 BestScore = TNumericLimits<int32>::Lowest();
     UNiagaraSystem* BestSystem = nullptr;
     for (const FAssetData& Asset : NiagaraAssets)
     {
@@ -523,7 +611,7 @@ UNiagaraSystem* ANWContentPresentationManager::FindBestNiagara(const TArray<FStr
             BestSystem = System;
         }
     }
-    return BestSystem;
+    return BestScore > 0 ? BestSystem : nullptr;
 }
 
 UStaticMeshComponent* ANWContentPresentationManager::EnsureStaticVisualComponent(ANWCharacter* Character, TWeakObjectPtr<UStaticMeshComponent>& Existing, const FName BaseName) const
@@ -536,10 +624,12 @@ UStaticMeshComponent* ANWContentPresentationManager::EnsureStaticVisualComponent
     if (!Component) { return nullptr; }
 
     Character->AddInstanceComponent(Component);
+    Component->SetupAttachment(Character->GetMesh());
     Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     Component->SetGenerateOverlapEvents(false);
-    Component->RegisterComponent();
+    Component->SetCastShadow(true);
     Component->SetVisibility(false, true);
+    Component->RegisterComponent();
     Existing = Component;
     return Component;
 }
@@ -560,8 +650,8 @@ USkeletalMeshComponent* ANWContentPresentationManager::EnsureArmorVisualComponen
     Component->SetupAttachment(Character->GetMesh());
     Component->SetCollisionEnabled(ECollisionEnabled::NoCollision);
     Component->SetGenerateOverlapEvents(false);
-    Component->RegisterComponent();
     Component->SetVisibility(false, true);
+    Component->RegisterComponent();
     State.ArmorParts.Add(SlotKey, Component);
     return Component;
 }
@@ -569,16 +659,16 @@ USkeletalMeshComponent* ANWContentPresentationManager::EnsureArmorVisualComponen
 UNiagaraComponent* ANWContentPresentationManager::EnsureBrutalAura(ANWCharacter* Character, FPlayerVisualState& State) const
 {
     if (State.BrutalAura.IsValid()) { return State.BrutalAura.Get(); }
-    if (!Character) { return nullptr; }
+    if (!Character || !bEnableNiagaraPresentation) { return nullptr; }
 
     UNiagaraComponent* Component = NewObject<UNiagaraComponent>(Character, MakeUniqueObjectName(Character, UNiagaraComponent::StaticClass(), FName(TEXT("NW_BrutalAura"))), RF_Transient);
     if (!Component) { return nullptr; }
 
     Character->AddInstanceComponent(Component);
     Component->SetupAttachment(Character->GetRootComponent());
-    Component->RegisterComponent();
+    Component->SetAutoActivate(false); // antes do RegisterComponent: evita warning e ativacao prematura
     Component->SetRelativeLocation(FVector(0.0f, 0.0f, -85.0f));
-    Component->SetAutoActivate(false);
+    Component->RegisterComponent();
     State.BrutalAura = Component;
     return Component;
 }
@@ -593,11 +683,11 @@ UPointLightComponent* ANWContentPresentationManager::EnsureBrutalLight(ANWCharac
 
     Character->AddInstanceComponent(Component);
     Component->SetupAttachment(Character->GetRootComponent());
-    Component->RegisterComponent();
     Component->SetRelativeLocation(FVector(0.0f, 0.0f, 85.0f));
     Component->SetAttenuationRadius(520.0f);
     Component->SetCastShadows(false);
     Component->SetIntensity(0.0f);
+    Component->RegisterComponent();
     State.BrutalLight = Component;
     return Component;
 }
@@ -606,9 +696,11 @@ FName ANWContentPresentationManager::FindHandSocket(ANWCharacter* Character, boo
 {
     if (!Character || !Character->GetMesh()) { return NAME_None; }
 
+    // Sockets dedicados tem prioridade sobre o osso cru da mao. O codigo anterior
+    // encontrava hand_r primeiro e nunca chegava em weapon_r/WeaponSocket.
     const TArray<FName> Candidates = bRightHand
-        ? TArray<FName>{ TEXT("hand_r"), TEXT("RightHand"), TEXT("weapon_r"), TEXT("WeaponSocket"), TEXT("weapon_socket_r") }
-        : TArray<FName>{ TEXT("hand_l"), TEXT("LeftHand"), TEXT("weapon_l"), TEXT("ShieldSocket"), TEXT("weapon_socket_l") };
+        ? TArray<FName>{ TEXT("weapon_r"), TEXT("WeaponSocket"), TEXT("weapon_socket_r"), TEXT("RightHand"), TEXT("hand_r") }
+        : TArray<FName>{ TEXT("weapon_l"), TEXT("ShieldSocket"), TEXT("weapon_socket_l"), TEXT("LeftHand"), TEXT("hand_l") };
 
     for (const FName Candidate : Candidates)
     {
@@ -644,12 +736,12 @@ TArray<FString> ANWContentPresentationManager::GetWeaponMeshKeywords(ENWWeaponTy
 {
     switch (WeaponType)
     {
-        case ENWWeaponType::Staff: return { TEXT("Staff"), TEXT("Rod"), TEXT("Wand") };
-        case ENWWeaponType::Greatsword: return { TEXT("Greatsword"), TEXT("LongSword"), TEXT("Long_Sword"), TEXT("Sword"), TEXT("Blade") };
+        case ENWWeaponType::Staff: return { TEXT("Staff"), TEXT("Rod"), TEXT("Wand"), TEXT("Scepter") };
+        case ENWWeaponType::Greatsword: return { TEXT("Greatsword"), TEXT("Great_Sword"), TEXT("LongSword"), TEXT("Long_Sword"), TEXT("Sword"), TEXT("Blade") };
         case ENWWeaponType::DualSwords: return { TEXT("Sword"), TEXT("Blade"), TEXT("Sabre"), TEXT("Saber") };
         case ENWWeaponType::SwordShield: return { TEXT("Sword"), TEXT("Blade"), TEXT("Sabre"), TEXT("Saber") };
-        case ENWWeaponType::Daggers: return { TEXT("Dagger"), TEXT("Knife"), TEXT("ShortBlade") };
-        case ENWWeaponType::Bow: return { TEXT("Bow"), TEXT("Recurve") };
+        case ENWWeaponType::Daggers: return { TEXT("Dagger"), TEXT("Knife"), TEXT("ShortBlade"), TEXT("Short_Blade") };
+        case ENWWeaponType::Bow: return { TEXT("Bow"), TEXT("Recurve"), TEXT("Longbow") };
         case ENWWeaponType::Firearm: return { TEXT("Musket"), TEXT("Rifle"), TEXT("Gun"), TEXT("Firearm") };
         default: return { TEXT("Weapon") };
     }
@@ -722,16 +814,26 @@ int32 ANWContentPresentationManager::ScoreAsset(const FAssetData& Asset, const T
         if (Searchable.Contains(Keyword.ToLower()))
         {
             bPrimaryMatch = true;
-            Score += 20;
+            Score += 28;
         }
     }
     for (const FString& Keyword : PreferredKeywords)
     {
-        if (Searchable.Contains(Keyword.ToLower())) { Score += 7; }
+        if (Searchable.Contains(Keyword.ToLower())) { Score += 10; }
     }
 
-    if (Searchable.Contains(TEXT("weapon"))) { Score += 2; }
-    if (Searchable.Contains(TEXT("skeletal")) || Searchable.Contains(TEXT("static"))) { Score += 1; }
+    if (Searchable.Contains(TEXT("classic_medieval")) || Searchable.Contains(TEXT("medieval_knight"))) { Score += 90; }
+    if (Searchable.Contains(TEXT("realistic"))) { Score += 80; }
+    if (Searchable.Contains(TEXT("pbr"))) { Score += 42; }
+    if (Searchable.Contains(TEXT("4k"))) { Score += 22; }
+    if (Searchable.Contains(TEXT("medieval"))) { Score += 18; }
+    if (Searchable.Contains(TEXT("steel")) || Searchable.Contains(TEXT("iron"))) { Score += 14; }
+    if (Searchable.Contains(TEXT("gameready")) || Searchable.Contains(TEXT("game_ready"))) { Score += 14; }
+
+    if (Searchable.Contains(TEXT("lowpoly")) || Searchable.Contains(TEXT("low_poly")) || Searchable.Contains(TEXT("low-poly"))) { Score -= 300; }
+    if (Searchable.Contains(TEXT("stylized")) || Searchable.Contains(TEXT("stylised"))) { Score -= 260; }
+    if (Searchable.Contains(TEXT("cartoon")) || Searchable.Contains(TEXT("toon")) || Searchable.Contains(TEXT("chibi")) || Searchable.Contains(TEXT("voxel"))) { Score -= 360; }
+
     return Score;
 }
 
