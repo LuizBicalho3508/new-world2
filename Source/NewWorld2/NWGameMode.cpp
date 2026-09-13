@@ -14,9 +14,14 @@
 #include "NWEnemyVisualDirector.h"
 #include "NWGameplaySafetyActor.h"
 #include "NWNvidiaPerformanceDirector.h"
+#include "NWPlayerEquipmentVisualDirector.h"
 #include "NWPremiumEnvironmentDirector.h"
 #include "NWPremiumGameplayDirector.h"
+#include "NWPremiumHUDDirector.h"
 #include "NWPremiumSkyDirector.h"
+#include "NWPremiumV6CombatDirector.h"
+#include "NWPremiumV6EnvironmentBooster.h"
+#include "NWPremiumV6PlayerDirector.h"
 #include "NWPremiumVFXDirector.h"
 #include "NWProceduralWorldManager.h"
 #include "NWStartupWarmupDirector.h"
@@ -27,25 +32,33 @@ namespace
 {
     void ReplaceActionMapping(UInputSettings* Settings, const FName ActionName, const TArray<FKey>& Keys)
     {
-        if (!Settings) { return; }
-
+        if (!Settings) return;
         TArray<FInputActionKeyMapping> Existing;
         Settings->GetActionMappingByName(ActionName, Existing);
-        for (const FInputActionKeyMapping& Mapping : Existing)
-        {
-            Settings->RemoveActionMapping(Mapping, false);
-        }
+        for (const FInputActionKeyMapping& Mapping : Existing) Settings->RemoveActionMapping(Mapping, false);
+        for (const FKey& Key : Keys) Settings->AddActionMapping(FInputActionKeyMapping(ActionName, Key), false);
+    }
 
-        for (const FKey& Key : Keys)
-        {
-            Settings->AddActionMapping(FInputActionKeyMapping(ActionName, Key), false);
-        }
+    void ReplaceAxisMapping(UInputSettings* Settings, const FName AxisName, const TArray<TPair<FKey, float>>& Keys)
+    {
+        if (!Settings) return;
+        TArray<FInputAxisKeyMapping> Existing;
+        Settings->GetAxisMappingByName(AxisName, Existing);
+        for (const FInputAxisKeyMapping& Mapping : Existing) Settings->RemoveAxisMapping(Mapping, false);
+        for (const TPair<FKey, float>& Entry : Keys) Settings->AddAxisMapping(FInputAxisKeyMapping(AxisName, Entry.Key, Entry.Value), false);
     }
 
     void NormalizePlayableInputMappings()
     {
         UInputSettings* Settings = UInputSettings::GetInputSettings();
-        if (!Settings) { return; }
+        if (!Settings) return;
+
+        // V6 tambem normaliza AXIS mappings. Hot reloads e configs antigas podiam
+        // deixar A/S/D sem evento enquanto W ainda funcionava.
+        ReplaceAxisMapping(Settings, TEXT("MoveForward"), { { EKeys::W, 1.0f }, { EKeys::S, -1.0f } });
+        ReplaceAxisMapping(Settings, TEXT("MoveRight"), { { EKeys::D, 1.0f }, { EKeys::A, -1.0f } });
+        ReplaceAxisMapping(Settings, TEXT("Turn"), { { EKeys::MouseX, 1.0f } });
+        ReplaceAxisMapping(Settings, TEXT("LookUp"), { { EKeys::MouseY, -1.0f } });
 
         ReplaceActionMapping(Settings, TEXT("Jump"), { EKeys::SpaceBar });
         ReplaceActionMapping(Settings, TEXT("Sprint"), { EKeys::LeftShift, EKeys::RightShift });
@@ -71,38 +84,27 @@ namespace
         ReplaceActionMapping(Settings, TEXT("FastTravelConfirm"), { EKeys::Y });
         ReplaceActionMapping(Settings, TEXT("RegenerateWorld"), { EKeys::F10 });
 
-        UE_LOG(LogTemp, Display, TEXT("[INPUT] mappings V5 normalizados: Q/E/R, RMB, Shift, Crouch, 1/2, I; epoch somente F10."));
+        Settings->ForceRebuildKeymaps();
+        UE_LOG(LogTemp, Warning, TEXT("[INPUT-V6] W/S/A/D + mouse + actions reconstruidos em runtime; fallback de polling tambem ativo."));
     }
 
     template<typename TActorClass>
     bool HasActorOfClass(UWorld* World)
     {
-        if (!World) { return false; }
-        for (TActorIterator<TActorClass> It(World); It; ++It)
-        {
-            if (IsValid(*It)) { return true; }
-        }
+        if (!World) return false;
+        for (TActorIterator<TActorClass> It(World); It; ++It) if (IsValid(*It)) return true;
         return false;
     }
 
     template<typename TActorClass>
     TActorClass* SpawnSingletonActor(UWorld* World, const TCHAR* LogTag)
     {
-        if (!World || HasActorOfClass<TActorClass>(World)) { return nullptr; }
-
+        if (!World || HasActorOfClass<TActorClass>(World)) return nullptr;
         FActorSpawnParameters Params;
         Params.SpawnCollisionHandlingOverride = ESpawnActorCollisionHandlingMethod::AlwaysSpawn;
-        TActorClass* Spawned = World->SpawnActor<TActorClass>(
-            TActorClass::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
-
-        if (Spawned)
-        {
-            UE_LOG(LogTemp, Display, TEXT("[BOOT] %s ativo: %s"), LogTag, *Spawned->GetName());
-        }
-        else
-        {
-            UE_LOG(LogTemp, Error, TEXT("[BOOT] falha ao criar %s."), LogTag);
-        }
+        TActorClass* Spawned = World->SpawnActor<TActorClass>(TActorClass::StaticClass(), FVector::ZeroVector, FRotator::ZeroRotator, Params);
+        if (Spawned) UE_LOG(LogTemp, Display, TEXT("[BOOT] %s ativo: %s"), LogTag, *Spawned->GetName());
+        else UE_LOG(LogTemp, Error, TEXT("[BOOT] falha ao criar %s."), LogTag);
         return Spawned;
     }
 }
@@ -124,36 +126,33 @@ void ANWGameMode::StartPlay()
     }
 
     ANWProceduralWorldManager* RuntimeWorldManager = EnsureWorldManager();
-    if (RuntimeWorldManager)
-    {
-        RuntimeWorldManager->DisableAutomaticEvolution();
-    }
+    if (RuntimeWorldManager) RuntimeWorldManager->DisableAutomaticEvolution();
 
     UWorld* World = GetWorld();
     if (World)
     {
         SpawnSingletonActor<ANWWorldEventDirector>(World, TEXT("WorldEventDirector"));
         SpawnSingletonActor<ANWGameplaySafetyActor>(World, TEXT("GameplaySafetyActor"));
-
-        // V5: configura primeiro o caminho NVIDIA. Ele nao possui dependencia
-        // binaria do plugin e so ativa DLSS/Reflex/FG quando os CVars oficiais
-        // estiverem realmente registrados pela plataforma atual.
         SpawnSingletonActor<ANWNvidiaPerformanceDirector>(World, TEXT("NvidiaPerformanceDirector"));
-
-        // Um unico dono de sol/ceu evita disputa de intensidade.
         SpawnSingletonActor<ANWPremiumSkyDirector>(World, TEXT("PremiumSkyDirector"));
-
-        // Loading gate curto: PSOs prioritarios sao preparados antes do controle,
-        // mas o jogo nao fica preso aguardando um DDC fill completo.
         SpawnSingletonActor<ANWStartupWarmupDirector>(World, TEXT("StartupWarmupDirector"));
 
         SpawnSingletonActor<ANWPremiumEnvironmentDirector>(World, TEXT("PremiumEnvironmentDirector"));
+        SpawnSingletonActor<ANWPremiumV6EnvironmentBooster>(World, TEXT("PremiumV6EnvironmentBooster"));
         SpawnSingletonActor<ANWEnemyVisualDirector>(World, TEXT("EnemyVisualDirector"));
         SpawnSingletonActor<ANWEnemyAnimationDirector>(World, TEXT("EnemyAnimationDirector"));
-        SpawnSingletonActor<ANWPremiumGameplayDirector>(World, TEXT("PremiumGameplayDirector"));
-        SpawnSingletonActor<ANWPremiumVFXDirector>(World, TEXT("PremiumVFXDirector"));
 
-        UE_LOG(LogTemp, Warning, TEXT("[PREMIUM-V5] bootstrap: fast boot + RTX/DLSS-ready + sol/nuvens/shafts + HUD + mobs sem cloth + VFX."));
+        // PlayerDirector vem antes do visual para mover os starters para a bag e
+        // iniciar o personagem visualmente sem overlays equipados.
+        SpawnSingletonActor<ANWPremiumV6PlayerDirector>(World, TEXT("PremiumV6PlayerDirector"));
+        SpawnSingletonActor<ANWPlayerEquipmentVisualDirector>(World, TEXT("PlayerEquipmentVisualDirector"));
+
+        SpawnSingletonActor<ANWPremiumGameplayDirector>(World, TEXT("PremiumGameplayDirector"));
+        SpawnSingletonActor<ANWPremiumV6CombatDirector>(World, TEXT("PremiumV6CombatDirector"));
+        SpawnSingletonActor<ANWPremiumVFXDirector>(World, TEXT("PremiumVFXDirector"));
+        SpawnSingletonActor<ANWPremiumHUDDirector>(World, TEXT("PremiumHUDDirector"));
+
+        UE_LOG(LogTemp, Warning, TEXT("[PREMIUM-V6] completo: movimento resiliente + bag comparativa + gear visual seguro + 21 skills tematicas + lush world + HUD V6 + RTX V5."));
     }
 
     Super::StartPlay();
@@ -162,26 +161,17 @@ void ANWGameMode::StartPlay()
 
 void ANWGameMode::RestartPlayer(AController* NewPlayer)
 {
-    if (!NewPlayer || NewPlayer->GetPawn())
-    {
-        return;
-    }
-
+    if (!NewPlayer || NewPlayer->GetPawn()) return;
     ANWProceduralWorldManager* Manager = EnsureWorldManager();
     const float SpawnX = 900.0f;
     const float SpawnY = 900.0f;
     const float SpawnZ = Manager ? Manager->GetTerrainHeightAt(SpawnX, SpawnY) + 110.0f : 1200.0f;
-    const FTransform SpawnTransform(FRotator(0.0f, 0.0f, 0.0f), FVector(SpawnX, SpawnY, SpawnZ));
-    RestartPlayerAtTransform(NewPlayer, SpawnTransform);
+    RestartPlayerAtTransform(NewPlayer, FTransform(FRotator::ZeroRotator, FVector(SpawnX, SpawnY, SpawnZ)));
 }
 
 void ANWGameMode::SpawnPlaytestEncounter()
 {
-    if (!GetWorld())
-    {
-        return;
-    }
-
+    if (!GetWorld()) return;
     ANWProceduralWorldManager* Manager = EnsureWorldManager();
     if (!Manager)
     {
@@ -193,21 +183,12 @@ void ANWGameMode::SpawnPlaytestEncounter()
     constexpr float EncounterRadius = 1900.0f;
     constexpr int32 DesiredNearbyEnemies = 5;
     int32 NearbyRegularEnemies = 0;
-
     for (TActorIterator<ANWEnemy> It(GetWorld()); It; ++It)
     {
         ANWEnemy* Enemy = *It;
-        if (!IsValid(Enemy) || Enemy->IsWorldBoss())
-        {
-            continue;
-        }
-
-        FVector Delta = Enemy->GetActorLocation() - SpawnCenter;
-        Delta.Z = 0.0f;
-        if (Delta.SizeSquared() <= FMath::Square(EncounterRadius))
-        {
-            ++NearbyRegularEnemies;
-        }
+        if (!IsValid(Enemy) || Enemy->IsWorldBoss()) continue;
+        FVector Delta = Enemy->GetActorLocation() - SpawnCenter; Delta.Z = 0.0f;
+        if (Delta.SizeSquared() <= FMath::Square(EncounterRadius)) ++NearbyRegularEnemies;
     }
 
     const int32 Needed = FMath::Max(0, DesiredNearbyEnemies - NearbyRegularEnemies);
@@ -217,65 +198,39 @@ void ANWGameMode::SpawnPlaytestEncounter()
         return;
     }
 
-    struct FEncounterSpawn
-    {
-        ENWEnemyArchetype Archetype;
-        FVector2D Offset;
-    };
-
+    struct FEncounterSpawn { ENWEnemyArchetype Archetype; FVector2D Offset; };
     const FEncounterSpawn Spawns[] = {
         { ENWEnemyArchetype::Zombie, FVector2D(760.0f, -360.0f) },
-        { ENWEnemyArchetype::Ghost,  FVector2D(900.0f,  300.0f) },
-        { ENWEnemyArchetype::Brute,  FVector2D(1120.0f,   0.0f) },
+        { ENWEnemyArchetype::Ghost, FVector2D(900.0f, 300.0f) },
+        { ENWEnemyArchetype::Brute, FVector2D(1120.0f, 0.0f) },
         { ENWEnemyArchetype::Zombie, FVector2D(1320.0f, -560.0f) },
-        { ENWEnemyArchetype::Ghost,  FVector2D(1480.0f,  520.0f) }
+        { ENWEnemyArchetype::Ghost, FVector2D(1480.0f, 520.0f) }
     };
 
     int32 Spawned = 0;
     for (const FEncounterSpawn& Entry : Spawns)
     {
-        if (Spawned >= Needed)
-        {
-            break;
-        }
-
+        if (Spawned >= Needed) break;
         const float X = SpawnCenter.X + Entry.Offset.X;
         const float Y = SpawnCenter.Y + Entry.Offset.Y;
         const float Z = Manager->GetTerrainHeightAt(X, Y) + 125.0f;
         const FVector Location(X, Y, Z);
         const FVector FacingVector = SpawnCenter - FVector(X, Y, SpawnCenter.Z);
         const FTransform Transform(FacingVector.Rotation(), Location);
-
-        ANWEnemy* Enemy = GetWorld()->SpawnActorDeferred<ANWEnemy>(
-            ANWEnemy::StaticClass(), Transform, this, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
-        if (!Enemy)
-        {
-            continue;
-        }
-
+        ANWEnemy* Enemy = GetWorld()->SpawnActorDeferred<ANWEnemy>(ANWEnemy::StaticClass(), Transform, this, nullptr, ESpawnActorCollisionHandlingMethod::AdjustIfPossibleButAlwaysSpawn);
+        if (!Enemy) continue;
         Enemy->ConfigureEnemy(Entry.Archetype, false, 1);
         UGameplayStatics::FinishSpawningActor(Enemy, Transform);
         ++Spawned;
-
-        UE_LOG(LogTemp, Display, TEXT("[PLAYTEST-MOB] spawn archetype=%d em %s | hp=%.0f"),
-            static_cast<int32>(Entry.Archetype), *Location.ToCompactString(), Enemy->GetMaxHealth());
+        UE_LOG(LogTemp, Display, TEXT("[PLAYTEST-MOB] spawn archetype=%d em %s | hp=%.0f"), static_cast<int32>(Entry.Archetype), *Location.ToCompactString(), Enemy->GetMaxHealth());
     }
-
-    UE_LOG(LogTemp, Warning, TEXT("[PLAYTEST] READY | encontro V5 novos=%d | existentes=%d | alvo=%d | HP bar + anti-one-shot + cloth safety"),
-        Spawned, NearbyRegularEnemies, DesiredNearbyEnemies);
+    UE_LOG(LogTemp, Warning, TEXT("[PLAYTEST] READY | encontro V6 novos=%d | existentes=%d | alvo=%d | skills/gear/inventory testaveis"), Spawned, NearbyRegularEnemies, DesiredNearbyEnemies);
 }
 
 ANWProceduralWorldManager* ANWGameMode::EnsureWorldManager()
 {
-    if (IsValid(WorldManager))
-    {
-        return WorldManager;
-    }
-
-    if (!GetWorld())
-    {
-        return nullptr;
-    }
+    if (IsValid(WorldManager)) return WorldManager;
+    if (!GetWorld()) return nullptr;
 
     for (TActorIterator<ANWProceduralWorldManager> It(GetWorld()); It; ++It)
     {
@@ -292,14 +247,8 @@ ANWProceduralWorldManager* ANWGameMode::EnsureWorldManager()
     }
 
     const FTransform ManagerTransform(FRotator::ZeroRotator, FVector::ZeroVector);
-    WorldManager = GetWorld()->SpawnActorDeferred<ANWProceduralWorldManager>(
-        ANWProceduralWorldManager::StaticClass(), ManagerTransform, this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
-
-    if (!WorldManager)
-    {
-        return nullptr;
-    }
-
+    WorldManager = GetWorld()->SpawnActorDeferred<ANWProceduralWorldManager>(ANWProceduralWorldManager::StaticClass(), ManagerTransform, this, nullptr, ESpawnActorCollisionHandlingMethod::AlwaysSpawn);
+    if (!WorldManager) return nullptr;
     if (UProceduralMeshComponent* Terrain = WorldManager->FindComponentByClass<UProceduralMeshComponent>())
     {
         Terrain->bUseAsyncCooking = false;
@@ -307,7 +256,6 @@ ANWProceduralWorldManager* ANWGameMode::EnsureWorldManager()
         Terrain->SetCollisionEnabled(ECollisionEnabled::QueryAndPhysics);
         Terrain->SetCollisionProfileName(TEXT("BlockAll"));
     }
-
     UGameplayStatics::FinishSpawningActor(WorldManager, ManagerTransform);
     return WorldManager;
 }
