@@ -89,8 +89,11 @@ protected:
     UPROPERTY(EditAnywhere, Category="PCG")
     bool bEnableRuntimePartitionedPCG = true;
 
+    // Os packs Fab variam muito em pivot, unidade e tamanho. No primeiro playtest
+    // usamos os primitives previsiveis do gerador C++. A descoberta automatica pode
+    // ser reativada depois que cada pack tiver adapter/escala autorados.
     UPROPERTY(EditAnywhere, Category="Visual")
-    bool bAutoDiscoverInstalledFreeAssets = true;
+    bool bAutoDiscoverInstalledFreeAssets = false;
 
     UPROPERTY(VisibleAnywhere, Category="Lighting")
     TObjectPtr<UDirectionalLightComponent> SunLight;
@@ -113,18 +116,19 @@ protected:
     UPROPERTY(EditDefaultsOnly, Category="Generation")
     float TerrainAmplitude = 900.0f;
 
-    // Instanced meshes ficam altos de proposito: HISM e muito mais barato que dezenas de Actors/AI.
+    // Quantidades conservadoras para o i7 antigo: ainda ha leitura visual do bioma,
+    // mas sem preencher a cena com centenas de instancias durante o primeiro teste.
     UPROPERTY(EditDefaultsOnly, Category="Generation")
-    int32 TreeCount = 260;
+    int32 TreeCount = 160;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation")
-    int32 BushCount = 190;
+    int32 BushCount = 110;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation")
-    int32 RockCount = 110;
+    int32 RockCount = 65;
 
     UPROPERTY(EditDefaultsOnly, Category="Generation")
-    int32 CrystalCount = 40;
+    int32 CrystalCount = 24;
 
     // Primeiro playtest: mantemos combate no mundo sem criar dezenas de Characters
     // antes de o jogador sequer assumir o controle.
