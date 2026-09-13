@@ -166,8 +166,8 @@ bool ANWEnemyVisualDirector::ApplyVisual(ANWEnemy* Enemy)
 {
     if (!Enemy || !Enemy->GetMesh()) { return false; }
 
-    UClass* AnimClass = nullptr;
-    USkeletalMesh* Mesh = FindBestMeshForEnemy(Enemy, AnimClass);
+    UClass* CompatibleAnimClass = nullptr;
+    USkeletalMesh* Mesh = FindBestMeshForEnemy(Enemy, CompatibleAnimClass);
     if (!Mesh)
     {
         HideDebugMeshes(Enemy);
@@ -177,11 +177,13 @@ bool ANWEnemyVisualDirector::ApplyVisual(ANWEnemy* Enemy)
     }
 
     Enemy->GetMesh()->SetSkeletalMeshAsset(Mesh);
-    if (AnimClass)
-    {
-        Enemy->GetMesh()->SetAnimationMode(EAnimationMode::AnimationBlueprint);
-        Enemy->GetMesh()->SetAnimInstanceClass(AnimClass);
-    }
+
+    // V2 executava o AnimBlueprint de herois diretamente em NPCs e o log registrou
+    // Divide_DoubleDouble no Greystone_AnimBlueprint. O V3 usa o AnimBP apenas como
+    // prova de que o skeleton possui conteudo de animacao; a execucao fica a cargo
+    // do NWEnemyAnimationDirector com AnimSequence segura.
+    Enemy->GetMesh()->SetAnimationMode(EAnimationMode::AnimationSingleNode);
+    Enemy->GetMesh()->SetAnimInstanceClass(nullptr);
 
     const bool bBoss = Enemy->IsWorldBoss();
     float TargetHeight = bBoss ? 330.0f : 190.0f;
@@ -212,12 +214,11 @@ bool ANWEnemyVisualDirector::ApplyVisual(ANWEnemy* Enemy)
 
     HideDebugMeshes(Enemy);
 
-    UE_LOG(LogTemp, Warning, TEXT("[MOB-VISUAL-V3] %s archetype=%d boss=%s -> %s | anim=%s | hp=%.0f"),
+    UE_LOG(LogTemp, Warning, TEXT("[MOB-VISUAL-V3] %s archetype=%d boss=%s -> %s | anim=SequenceDirector | hp=%.0f"),
         *Enemy->GetName(),
         static_cast<int32>(Enemy->GetEnemyArchetype()),
         Enemy->IsWorldBoss() ? TEXT("sim") : TEXT("nao"),
         *Mesh->GetPathName(),
-        AnimClass ? *AnimClass->GetName() : TEXT("sem AnimBP"),
         Enemy->GetMaxHealth());
     return true;
 }
