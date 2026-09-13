@@ -79,17 +79,26 @@ private:
     UFUNCTION()
     void OnRep_Weather();
 
-    UPROPERTY(EditDefaultsOnly, Category="World|Time", meta=(ClampMin="120.0"))
-    float FullDayDurationSeconds = 720.0f;
+    // A iluminacao e controlada exclusivamente pelo NWLightingSafetyActor. Um ciclo
+    // mais lento evita mudancas perceptiveis de exposicao durante o combate.
+    UPROPERTY(EditDefaultsOnly, Category="World|Time", meta=(ClampMin="300.0"))
+    float FullDayDurationSeconds = 1800.0f;
 
-    UPROPERTY(EditDefaultsOnly, Category="World|Weather", meta=(ClampMin="30.0"))
-    float WeatherChangeIntervalSeconds = 95.0f;
+    UPROPERTY(EditDefaultsOnly, Category="World|Weather", meta=(ClampMin="60.0"))
+    float WeatherChangeIntervalSeconds = 240.0f;
 
     UPROPERTY(EditDefaultsOnly, Category="World|Biomes", meta=(ClampMin="1000.0"))
     float BiomeCellSize = 4800.0f;
 
-    // Dois bosses simultaneos preservam a exploracao aleatoria e reduzem o custo
-    // de AI/replicacao do primeiro playtest em hardware com CPU limitada.
+    // Desligado no vertical slice estavel: a busca automatica por qualquer Niagara
+    // ou audio do Fab causava compilacao de PSO/audio durante a luta e podia escolher
+    // efeitos semanticamente errados. Curadoria por asset explicito entra depois.
+    UPROPERTY(EditDefaultsOnly, Category="World|Presentation")
+    bool bEnableDynamicPresentationAssets = false;
+
+    UPROPERTY(EditDefaultsOnly, Category="World|Population", meta=(ClampMin="0", ClampMax="30"))
+    int32 RoamingEnemyCount = 8;
+
     UPROPERTY(EditDefaultsOnly, Category="World|Bosses", meta=(ClampMin="1", ClampMax="6"))
     int32 DesiredWorldBossCount = 2;
 
