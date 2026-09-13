@@ -40,6 +40,12 @@ Content/__ExternalActors__/GeneratedWorld/
 Content/__ExternalObjects__/GeneratedWorld/
 
 # Licensed/free vendor content is installed locally through Fab/Epic and is not redistributed.
+# Keep these local even when the packs are free: their marketplace/Fab licenses do not imply
+# that the original .uasset payload should be committed into this source repository.
+Content/Fab/
+Content/ArrowTrail/
+Content/Free_Magic/
+Content/NiagaraExamples/
 Content/ParagonGreystone/
 Content/ParagonGrux/
 Content/ParagonSparrow/
@@ -58,6 +64,16 @@ Content/EuropeanBeech/
 Content/EuropeanHornbeam/
 Content/ElderBoom/
 Content/MedievalVillage/
+Content/SoulCave/
+Content/Soul_Cave/
+Content/GameAnimationSample/
+Content/Game_Animation_Sample/
+Content/AnimationStarterPack/
+Content/Animation_Starter_Pack/
+Content/OpenWorldDemoCollection/
+Content/Open_World_Demo_Collection/
+Content/DeformableSnowSystem/
+Content/ProceduralSeaWaves/
 
 # Keep authored Unreal content, source, config and docs
 !Content/
