@@ -7,7 +7,7 @@ PROJECT_FILE="$PROJECT_DIR/NewWorld2.uproject"
 GAME_MAP="/Engine/Maps/Entry?game=/Script/NewWorld2.NWGameMode"
 UE_ROOT="${UE_ROOT:-$HOME/Aplicativos/UnrealEngine-5.8}"
 MAX_PARALLEL_ACTIONS=3
-FPS_LIMIT=45
+FPS_LIMIT=60
 RES_X=1280
 RES_Y=720
 PROFILE=0
@@ -16,30 +16,12 @@ SKIP_BUILD=0
 
 while (($#)); do
     case "$1" in
-        --ue-root)
-            UE_ROOT="$2"
-            shift 2
-            ;;
-        --profile)
-            PROFILE=1
-            shift
-            ;;
-        --world-partition)
-            USE_WORLD_PARTITION=1
-            shift
-            ;;
-        --skip-build)
-            SKIP_BUILD=1
-            shift
-            ;;
-        --fps)
-            FPS_LIMIT="$2"
-            shift 2
-            ;;
-        --max-parallel)
-            MAX_PARALLEL_ACTIONS="$2"
-            shift 2
-            ;;
+        --ue-root) UE_ROOT="$2"; shift 2 ;;
+        --profile) PROFILE=1; shift ;;
+        --world-partition) USE_WORLD_PARTITION=1; shift ;;
+        --skip-build) SKIP_BUILD=1; shift ;;
+        --fps) FPS_LIMIT="$2"; shift 2 ;;
+        --max-parallel) MAX_PARALLEL_ACTIONS="$2"; shift 2 ;;
         --resolution)
             if [[ "$2" =~ ^([0-9]+)x([0-9]+)$ ]]; then
                 RES_X="${BASH_REMATCH[1]}"
@@ -50,10 +32,7 @@ while (($#)); do
             fi
             shift 2
             ;;
-        *)
-            echo "Argumento desconhecido: $1" >&2
-            exit 2
-            ;;
+        *) echo "Argumento desconhecido: $1" >&2; exit 2 ;;
     esac
 done
 
@@ -70,6 +49,8 @@ if [[ ! -x "$BUILD_SH" ]]; then
     echo "ERRO: Build.sh nao encontrado em: $BUILD_SH" >&2
     exit 1
 fi
+[[ "$FPS_LIMIT" =~ ^[0-9]+$ ]] || { echo "FPS invalido: $FPS_LIMIT" >&2; exit 2; }
+[[ "$MAX_PARALLEL_ACTIONS" =~ ^[0-9]+$ ]] || { echo "max-parallel invalido" >&2; exit 2; }
 
 : > "$LOG_FILE"
 exec > >(tee -a "$LOG_FILE") 2>&1
@@ -77,8 +58,6 @@ exec > >(tee -a "$LOG_FILE") 2>&1
 cd "$PROJECT_DIR"
 git config core.fileMode false || true
 
-# O Editor/Fab pode salvar novamente um DefaultInput.ini antigo. O playtest sempre
-# usa o arquivo versionado; uma eventual diferenca local e guardada para consulta.
 if ! git diff --quiet -- Config/DefaultInput.ini; then
     mkdir -p "$BACKUP_DIR"
     git diff -- Config/DefaultInput.ini > "$BACKUP_DIR/DefaultInput.local.patch"
@@ -86,8 +65,6 @@ if ! git diff --quiet -- Config/DefaultInput.ini; then
     git checkout -- Config/DefaultInput.ini
 fi
 
-# Overrides de runtime podem anular tanto input quanto renderer. Preservamos uma
-# copia antes de remover apenas os INIs gerados; Content/Fab nunca e tocado.
 shopt -s nullglob
 for CONFIG_OVERRIDE in \
     "$PROJECT_DIR"/Saved/Config/Linux*/Input.ini \
@@ -123,7 +100,7 @@ else
 fi
 
 echo "============================================================"
-echo " NEW WORLD 2 - PLAYABLE BIGLINUX"
+echo " NEW WORLD 2 - PLAYABLE BIGLINUX V7"
 echo "============================================================"
 echo "Projeto : $PROJECT_DIR"
 echo "UE      : $UE_ROOT"
