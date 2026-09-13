@@ -24,8 +24,8 @@ ANWEnemy::ANWEnemy()
 
     bReplicates = true;
     SetReplicateMovement(true);
-    NetUpdateFrequency = 10.0f;
-    MinNetUpdateFrequency = 4.0f;
+    SetNetUpdateFrequency(10.0f);
+    SetMinNetUpdateFrequency(4.0f);
 
     GetCapsuleComponent()->InitCapsuleSize(42.0f, 88.0f);
 
@@ -46,7 +46,7 @@ void ANWEnemy::BeginPlay()
     if (HasAuthority()) { Health = MaxHealth; }
     if (GetCharacterMovement()) { GetCharacterMovement()->MaxWalkSpeed = MoveSpeed; }
 
-    // Visual licenciado e responsabilidade exclusiva do NWContentPresentationManager.
+    // Visual licenciado e responsabilidade exclusiva do sistema de apresentacao.
     // O ator de AI nao percorre mais o Asset Registry em BeginPlay/ConfigureEnemy.
 }
 
@@ -58,8 +58,8 @@ void ANWEnemy::ConfigureEnemy(ENWEnemyArchetype InArchetype, bool bInWorldBoss, 
     ApplyArchetypeStats();
 
     PrimaryActorTick.TickInterval = bWorldBoss ? 0.08f : NormalThinkInterval;
-    NetUpdateFrequency = bWorldBoss ? 15.0f : 10.0f;
-    MinNetUpdateFrequency = bWorldBoss ? 7.5f : 4.0f;
+    SetNetUpdateFrequency(bWorldBoss ? 15.0f : 10.0f);
+    SetMinNetUpdateFrequency(bWorldBoss ? 7.5f : 4.0f);
     CachedTarget.Reset();
     NextTargetRefreshTime = -1000.0f;
 
@@ -72,8 +72,6 @@ void ANWEnemy::ConfigureEnemy(ENWEnemyArchetype InArchetype, bool bInWorldBoss, 
 
 void ANWEnemy::ApplyArchetypeStats()
 {
-    // Sempre restaura o capsule base antes de aplicar modificadores de boss. Isso
-    // deixa reconfiguracao/replicacao idempotente em vez de acumular tamanho antigo.
     if (GetCapsuleComponent()) { GetCapsuleComponent()->SetCapsuleSize(42.0f, 88.0f); }
     PlayerAggroRange = 2100.0f;
     WorldTargetRange = 9000.0f;
@@ -260,8 +258,6 @@ void ANWEnemy::OnRep_Health() {}
 void ANWEnemy::OnRep_EnemyIdentity()
 {
     ApplyArchetypeStats();
-    // O presentation manager observa a identidade replicada e atualiza a malha no
-    // tick seguinte. Nenhuma busca de assets e feita dentro da AI.
 }
 
 float ANWEnemy::GetNearestPlayerDistance() const
