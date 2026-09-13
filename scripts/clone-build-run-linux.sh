@@ -160,7 +160,7 @@ if (( PROFILE )); then
   EXEC_CMDS="t.MaxFPS $FPS_LIMIT,stat unit,stat game,stat gpu,stat fps"
   echo "PROFILE ATIVO: observe Game, Draw, GPU e Frame na tela."
 else
-  EXEC_CMDS="t.MaxFPS $FPS_LIMIT,stat unit,stat fps"
+  EXEC_CMDS="t.MaxFPS $FPS_LIMIT"
 fi
 
 echo "Perfil: CPU-saver + GPU-quality | ${RES_X}x${RES_Y} | ${FPS_LIMIT} FPS | Vulkan SM6"
