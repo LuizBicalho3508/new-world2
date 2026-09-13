@@ -7,7 +7,9 @@ UE_ROOT="${UE_ROOT:-}"
 ENGINE_INSTALL_BASE="${NW2_UE_INSTALL_ROOT:-$HOME/Aplicativos}"
 SKIP_SYSTEM_UPDATE=0
 SKIP_ASSET_CHECK=0
-SKIP_WORLD_PARTITION=0
+# O primeiro playtest usa Entry + gerador runtime. World Partition fica opt-in ate
+# existir mapa autorado; isso remove uma camada desnecessaria de variabilidade.
+SKIP_WORLD_PARTITION=1
 CURRENT_STEP="inicializacao"
 BOOTSTRAP_LOG="${NW2_BOOTSTRAP_LOG:-$HOME/nw2-bootstrap.log}"
 
@@ -43,7 +45,8 @@ Uso: $0 [opcoes]
   --ue-root PATH              Unreal Engine 5.8 ja instalada/descompactada
   --skip-system-update        Nao executa pacman -Syu
   --skip-asset-check          Nao valida Content/*.uasset
-  --skip-world-partition      Testa no mapa fallback
+  --world-partition           Opt-in: testa o mapa convertido para World Partition
+  --skip-world-partition      Forca o mapa seguro Entry (padrao atual)
 USAGE
 }
 while [[ $# -gt 0 ]]; do
@@ -52,6 +55,7 @@ while [[ $# -gt 0 ]]; do
     --ue-root) UE_ROOT="$2"; shift 2 ;;
     --skip-system-update) SKIP_SYSTEM_UPDATE=1; shift ;;
     --skip-asset-check) SKIP_ASSET_CHECK=1; shift ;;
+    --world-partition) SKIP_WORLD_PARTITION=0; shift ;;
     --skip-world-partition) SKIP_WORLD_PARTITION=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) echo "Argumento desconhecido: $1" >&2; usage; exit 2 ;;
@@ -289,11 +293,11 @@ else
 fi
 
 step "8/8 - COMPILANDO E ABRINDO O GAME"
-ARGS=(--destination "$DESTINATION" --ue-root "$UE_ROOT" --skip-toolchain --profile)
+ARGS=(--destination "$DESTINATION" --ue-root "$UE_ROOT" --skip-toolchain)
 (( SKIP_WORLD_PARTITION )) && ARGS+=(--skip-world-partition)
 
-# Nao usamos exec aqui: se o build/game falhar, este bootstrap ainda consegue registrar
-# a etapa, o exit code e o caminho do log antes de devolver o controle ao terminal.
+# Nao usamos --profile por padrao: stat game/gpu cobria a tela inteira e alterava o
+# proprio teste. Para profiling, use scripts/play-biglinux.sh --profile manualmente.
 bash "$DESTINATION/scripts/clone-build-run-linux.sh" "${ARGS[@]}"
 FINAL_STATUS=$?
 
