@@ -22,13 +22,20 @@ namespace
         return false;
     }
 
+    bool HasAssetPackage(const TCHAR* PackageName)
+    {
+        if (!PackageName) { return false; }
+        IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
+        TArray<FAssetData> Assets;
+        Registry.GetAssetsByPackageName(FName(PackageName), Assets, true);
+        return !Assets.IsEmpty();
+    }
+
     bool AreLeaderPoseMeshesCompatible(const USkeletalMesh* BaseMesh, const USkeletalMesh* PartMesh)
     {
         if (!BaseMesh || !PartMesh) { return false; }
         if (BaseMesh->GetSkeleton() && BaseMesh->GetSkeleton() == PartMesh->GetSkeleton()) { return true; }
 
-        // Alguns packs Fab duplicam o USkeleton mesmo mantendo exatamente a mesma
-        // hierarquia. Leader Pose funciona nesse caso se a tabela de bones e identica.
         const FReferenceSkeleton& BaseRef = BaseMesh->GetRefSkeleton();
         const FReferenceSkeleton& PartRef = PartMesh->GetRefSkeleton();
         if (BaseRef.GetNum() <= 0 || BaseRef.GetNum() != PartRef.GetNum()) { return false; }
@@ -46,21 +53,26 @@ namespace
         const FString Lower = MeshPath.ToLower();
         if (Lower.Contains(TEXT("uefn_mannequin")) || Lower.Contains(TEXT("gameanimationsample")) || Lower.Contains(TEXT("game_animation_sample")))
         {
-            if (UClass* Class = LoadClass<UAnimInstance>(nullptr, TEXT("/Game/Blueprints/ABP_SandboxCharacter.ABP_SandboxCharacter_C")))
+            if (HasAssetPackage(TEXT("/Game/Blueprints/ABP_SandboxCharacter")))
             {
-                return Class;
+                if (UClass* Class = LoadClass<UAnimInstance>(nullptr, TEXT("/Game/Blueprints/ABP_SandboxCharacter.ABP_SandboxCharacter_C")))
+                {
+                    return Class;
+                }
             }
         }
 
-        if (Lower.Contains(TEXT("manny")) || Lower.Contains(TEXT("mannequin")))
+        if (Lower.Contains(TEXT("manny")) || Lower.Contains(TEXT("mannequin")) || Lower.Contains(TEXT("quinn")))
         {
-            static const TCHAR* MannyAnimCandidates[] = {
-                TEXT("/Game/Characters/Mannequins/Animations/ABP_Manny.ABP_Manny_C"),
-                TEXT("/Game/Characters/Mannequins/Animations/ABP_Quinn.ABP_Quinn_C")
+            struct FAnimCandidate { const TCHAR* Package; const TCHAR* Object; };
+            static const FAnimCandidate Candidates[] = {
+                { TEXT("/Game/Characters/Mannequins/Animations/ABP_Manny"), TEXT("/Game/Characters/Mannequins/Animations/ABP_Manny.ABP_Manny_C") },
+                { TEXT("/Game/Characters/Mannequins/Animations/ABP_Quinn"), TEXT("/Game/Characters/Mannequins/Animations/ABP_Quinn.ABP_Quinn_C") }
             };
-            for (const TCHAR* Candidate : MannyAnimCandidates)
+            for (const FAnimCandidate& Candidate : Candidates)
             {
-                if (UClass* Class = LoadClass<UAnimInstance>(nullptr, Candidate)) { return Class; }
+                if (!HasAssetPackage(Candidate.Package)) { continue; }
+                if (UClass* Class = LoadClass<UAnimInstance>(nullptr, Candidate.Object)) { return Class; }
             }
         }
         return nullptr;
@@ -86,11 +98,9 @@ namespace
         if (Search.Contains(TEXT("/characters/mannequins/"))) Score += 1050;
         if (Search.Contains(TEXT("basebody")) || Search.Contains(TEXT("base_body"))) Score += 950;
         if (Search.Contains(TEXT("underwear")) || Search.Contains(TEXT("underlayer"))) Score += 900;
-        if (Search.Contains(TEXT("mannequin")) || Search.Contains(TEXT("manny"))) Score += 700;
+        if (Search.Contains(TEXT("mannequin")) || Search.Contains(TEXT("manny")) || Search.Contains(TEXT("quinn"))) Score += 700;
         if (Search.Contains(TEXT("neutral")) || Search.Contains(TEXT("body_base"))) Score += 520;
 
-        // Um personagem completo de cavaleiro volta ao problema original: armadura
-        // permanente por baixo das pecas equipadas. Nao o escolhemos como corpo-base.
         if (Search.Contains(TEXT("knight")) || Search.Contains(TEXT("warrior")) ||
             Search.Contains(TEXT("completecharacter")) || Search.Contains(TEXT("complete_character")))
         {
@@ -138,7 +148,8 @@ bool ANWPlayerEquipmentVisualDirector::IsUnsafePath(const FString& InPath) const
         TEXT("/demo/"), TEXT("/preview"), TEXT("/tutorial"), TEXT("/test/"),
         TEXT("paragonminions"), TEXT("/fx/skeletalmeshes/"), TEXT("_proto"),
         TEXT("/buff/"), TEXT("/skins/"), TEXT("lowpoly"), TEXT("low_poly"),
-        TEXT("stylized"), TEXT("cartoon"), TEXT("collision"), TEXT("proxy")
+        TEXT("stylized"), TEXT("cartoon"), TEXT("collision"), TEXT("proxy"),
+        TEXT("globalfoliageactor"), TEXT("icon_sock")
     };
     for (const TCHAR* Token : Blocked)
     {
@@ -164,7 +175,7 @@ void ANWPlayerEquipmentVisualDirector::ScanAssets()
     Registry.GetAssets(SkeletalFilter, SkeletalAssets);
 
     UE_LOG(LogTemp, Warning,
-        TEXT("[PLAYER-GEAR-V8] catalogo: static=%d skeletal=%d | corpo neutro + familia de skeleton + fit de armas."),
+        TEXT("[PLAYER-GEAR-V10] catalogo: static=%d skeletal=%d | resolucao segura sem hard-load de AnimBP ausente."),
         StaticAssets.Num(), SkeletalAssets.Num());
 }
 
@@ -226,13 +237,14 @@ void ANWPlayerEquipmentVisualDirector::ResolveNeutralBase(ANWCharacter* Characte
         int32 Score = NeutralBodyScore(Search);
         if (Score <= BestScore || Score < 450) { continue; }
 
+        UClass* AnimClass = LoadNeutralAnimClass(Search);
+        if (!AnimClass) { continue; }
+
         USkeletalMesh* Candidate = Cast<USkeletalMesh>(Asset.GetAsset());
         if (!Candidate || Candidate->HasActiveClothingAssets()) { continue; }
 
-        UClass* AnimClass = LoadNeutralAnimClass(Candidate->GetPathName());
         if (!AnimClass && CurrentMesh && CurrentAnimClass && AreLeaderPoseMeshesCompatible(CurrentMesh, Candidate))
         {
-            // Underlayer da mesma familia do personagem atual pode reutilizar o AnimBP.
             AnimClass = CurrentAnimClass;
             Score += 120;
         }
@@ -247,8 +259,8 @@ void ANWPlayerEquipmentVisualDirector::ResolveNeutralBase(ANWCharacter* Characte
     {
         State.BaseMeshPath = CurrentMesh ? CurrentMesh->GetPathName() : FString();
         State.bNeutralBaseActive = false;
-        UE_LOG(LogTemp, Warning,
-            TEXT("[PLAYER-BASE-V8] avatar neutro nao encontrado. Greystone/visual atual mantido temporariamente. Rode prepare-neutral-player-linux.sh ou instale Game Animation Sample."));
+        UE_LOG(LogTemp, Display,
+            TEXT("[PLAYER-BASE-V10] avatar neutro completo (mesh+AnimBP) nao instalado; mantendo corpo atual sem gerar Failed-to-find-object."));
         return;
     }
 
@@ -264,14 +276,14 @@ void ANWPlayerEquipmentVisualDirector::ResolveNeutralBase(ANWCharacter* Characte
     State.bNeutralBaseActive = true;
 
     UE_LOG(LogTemp, Warning,
-        TEXT("[PLAYER-BASE-V8] corpo neutro ativo: %s | AnimClass=%s | armadura passa a procurar a mesma familia de bones."),
+        TEXT("[PLAYER-BASE-V10] corpo neutro ativo: %s | AnimClass=%s"),
         *BestMesh->GetPathName(), *BestAnimClass->GetName());
 }
 
 void ANWPlayerEquipmentVisualDirector::UpdateWeapon(ANWCharacter* Character, FPlayerGearState& State)
 {
-    UStaticMeshComponent* Right = EnsureWeaponComponent(Character, State.RightWeapon, TEXT("NWV8_Weapon_R"));
-    UStaticMeshComponent* Left = EnsureWeaponComponent(Character, State.LeftWeapon, TEXT("NWV8_Weapon_L"));
+    UStaticMeshComponent* Right = EnsureWeaponComponent(Character, State.RightWeapon, TEXT("NWV10_Weapon_R"));
+    UStaticMeshComponent* Left = EnsureWeaponComponent(Character, State.LeftWeapon, TEXT("NWV10_Weapon_L"));
     if (!Right || !Left) { return; }
 
     Right->SetVisibility(false, true);
@@ -282,15 +294,21 @@ void ANWPlayerEquipmentVisualDirector::UpdateWeapon(ANWCharacter* Character, FPl
     const ENWWeaponType Type = Character->GetActiveWeapon();
     if (!Character->HasEquippedWeaponItem(Type))
     {
-        UE_LOG(LogTemp, Display, TEXT("[PLAYER-GEAR-V8] %s sem item da arma ativa: maos livres."), *Character->GetName());
+        UE_LOG(LogTemp, Display, TEXT("[PLAYER-GEAR-V10] %s sem item da arma ativa: maos livres."), *Character->GetName());
         return;
     }
 
     const FName Style = GetActiveWeaponStyle(Character);
     UStaticMesh* WeaponMesh = FindWeaponMesh(Type, Style);
+    bool bUsingStaffFallback = false;
+    if (!WeaponMesh && Type == ENWWeaponType::Staff)
+    {
+        WeaponMesh = LoadObject<UStaticMesh>(nullptr, TEXT("/Engine/BasicShapes/Cylinder.Cylinder"));
+        bUsingStaffFallback = WeaponMesh != nullptr;
+    }
     if (!WeaponMesh)
     {
-        UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V8] nenhum mesh de arma encontrado para %s/%s."),
+        UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V10] nenhum mesh de arma encontrado para %s/%s."),
             *NWCombat::WeaponTypeToString(Type), *Style.ToString());
         return;
     }
@@ -301,7 +319,7 @@ void ANWPlayerEquipmentVisualDirector::UpdateWeapon(ANWCharacter* Character, FPl
         const FName Socket = FindHandSocket(Character, bRight);
         if (Socket.IsNone())
         {
-            UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V8] rig sem socket/bone de mao %s para %s."),
+            UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V10] rig sem socket/bone de mao %s para %s."),
                 bRight ? TEXT("direita") : TEXT("esquerda"), *Character->GetName());
             return;
         }
@@ -321,8 +339,8 @@ void ANWPlayerEquipmentVisualDirector::UpdateWeapon(ANWCharacter* Character, FPl
         if (UStaticMesh* Shield = FindShieldMesh(Style)) { Configure(Left, false, Shield); }
     }
 
-    UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V8] arma visivel: %s -> %s | base=%s"),
-        *NWCombat::WeaponTypeToString(Type), *WeaponMesh->GetPathName(), *State.BaseMeshPath);
+    UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V10] arma visivel: %s -> %s | fallbackStaff=%s | base=%s"),
+        *NWCombat::WeaponTypeToString(Type), *WeaponMesh->GetPathName(), bUsingStaffFallback ? TEXT("sim") : TEXT("nao"), *State.BaseMeshPath);
 }
 
 void ANWPlayerEquipmentVisualDirector::UpdateArmor(ANWCharacter* Character, FPlayerGearState& State)
@@ -346,13 +364,12 @@ void ANWPlayerEquipmentVisualDirector::UpdateArmor(ANWCharacter* Character, FPla
             SkeletalPart->SetLeaderPoseComponent(Character->GetMesh(), false, false);
             SkeletalPart->SetRelativeTransform(FTransform::Identity);
             SkeletalPart->SetVisibility(true, true);
-            UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V8] armadura VESTIDA: %s -> %s"), *Item.Name, *Mesh->GetPathName());
+            UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V10] armadura VESTIDA: %s -> %s"), *Item.Name, *Mesh->GetPathName());
             continue;
         }
 
-        // Static armor em tronco/pernas/luvas foi propositalmente desativada na V8:
-        // prender uma peca rigida a um unico bone gera exatamente o efeito flutuando
-        // relatado no playtest. Capacete e a unica excecao visualmente previsivel.
+        // Rigid chest/legs/gloves are intentionally not attached to a single bone:
+        // that was the floating-armor bug seen in the playtest. Helmet is safe.
         if (Item.Slot == ENWEquipmentSlot::Head)
         {
             if (UStaticMesh* StaticMesh = FindStaticArmorMesh(Item))
@@ -366,7 +383,7 @@ void ANWPlayerEquipmentVisualDirector::UpdateArmor(ANWCharacter* Character, FPla
                         StaticPart->SetStaticMesh(StaticMesh);
                         StaticPart->SetRelativeTransform(GetStaticArmorRelativeTransform(Item.Slot, StaticMesh));
                         StaticPart->SetVisibility(true, true);
-                        UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V8] capacete StaticMesh seguro: %s -> %s"),
+                        UE_LOG(LogTemp, Warning, TEXT("[PLAYER-GEAR-V10] capacete StaticMesh seguro: %s -> %s"),
                             *Item.Name, *StaticMesh->GetPathName());
                         continue;
                     }
@@ -375,7 +392,7 @@ void ANWPlayerEquipmentVisualDirector::UpdateArmor(ANWCharacter* Character, FPla
         }
 
         UE_LOG(LogTemp, Display,
-            TEXT("[PLAYER-GEAR-V8] %s sem peca skeletal compatível com o corpo-base; fallback rigido omitido para nao flutuar."),
+            TEXT("[PLAYER-GEAR-V10] %s sem peca skeletal compativel; gameplay mantido e fallback rigido bloqueado."),
             *Item.Name);
     }
 
@@ -404,7 +421,7 @@ UStaticMesh* ANWPlayerEquipmentVisualDirector::FindWeaponMesh(ENWWeaponType Type
     switch (Type)
     {
         case ENWWeaponType::Staff:
-            Primary = { TEXT("staff"), TEXT("scepter"), TEXT("sceptre"), TEXT("wand"), TEXT("quarterstaff"), TEXT("magic_staff"), TEXT("magicstaff") };
+            Primary = { TEXT("staff"), TEXT("scepter"), TEXT("sceptre"), TEXT("wand"), TEXT("quarterstaff"), TEXT("magic_staff"), TEXT("magicstaff"), TEXT("cane") };
             Secondary = { TEXT("rod"), TEXT("polearm"), TEXT("spear") };
             break;
         case ENWWeaponType::Greatsword: Primary = { TEXT("greatsword"), TEXT("great_sword"), TEXT("longsword") }; Secondary = { TEXT("sword") }; break;
@@ -416,8 +433,8 @@ UStaticMesh* ANWPlayerEquipmentVisualDirector::FindWeaponMesh(ENWWeaponType Type
         default: break;
     }
 
-    int32 BestScore = TNumericLimits<int32>::Lowest();
-    UStaticMesh* Best = nullptr;
+    struct FCandidate { int32 Score = 0; FAssetData Asset; FString Path; };
+    TArray<FCandidate> Candidates;
     for (const FAssetData& Asset : StaticAssets)
     {
         const FString Search = (Asset.PackageName.ToString() + TEXT("/") + Asset.AssetName.ToString()).ToLower();
@@ -428,14 +445,8 @@ UStaticMesh* ANWPlayerEquipmentVisualDirector::FindWeaponMesh(ENWWeaponType Type
 
         int32 Score = 0;
         bool bMatch = false;
-        for (const FString& K : Primary)
-        {
-            if (Search.Contains(K)) { Score += 70; bMatch = true; }
-        }
-        for (const FString& K : Secondary)
-        {
-            if (Search.Contains(K)) { Score += 28; bMatch = true; }
-        }
+        for (const FString& K : Primary) { if (Search.Contains(K)) { Score += 70; bMatch = true; } }
+        for (const FString& K : Secondary) { if (Search.Contains(K)) { Score += 28; bMatch = true; } }
         if (!bMatch) { continue; }
 
         if (!StyleId.IsNone() && Search.Contains(StyleId.ToString().ToLower())) { Score += 95; }
@@ -444,10 +455,23 @@ UStaticMesh* ANWPlayerEquipmentVisualDirector::FindWeaponMesh(ENWWeaponType Type
         if (Search.Contains(TEXT("medieval")) || Search.Contains(TEXT("pbr")) || Search.Contains(TEXT("game_ready")) || Search.Contains(TEXT("gameready"))) { Score += 35; }
         if (Search.Contains(TEXT("classic_medieval")) || Search.Contains(TEXT("dark_knight")) || Search.Contains(TEXT("thornblade")) || Search.Contains(TEXT("ethereal"))) { Score += 65; }
         if (Search.Contains(TEXT("sample")) && !Search.Contains(TEXT("weapon"))) { Score -= 30; }
+        Candidates.Add({ Score, Asset, Search });
+    }
 
-        UStaticMesh* Mesh = Cast<UStaticMesh>(Asset.GetAsset());
+    Candidates.Sort([](const FCandidate& A, const FCandidate& B)
+    {
+        if (A.Score != B.Score) { return A.Score > B.Score; }
+        return A.Path < B.Path;
+    });
+
+    const int32 MaxLoads = FMath::Min(12, Candidates.Num());
+    UStaticMesh* Best = nullptr;
+    int32 BestScore = TNumericLimits<int32>::Lowest();
+    for (int32 Index = 0; Index < MaxLoads; ++Index)
+    {
+        UStaticMesh* Mesh = Cast<UStaticMesh>(Candidates[Index].Asset.GetAsset());
         if (!Mesh) { continue; }
-
+        int32 Score = Candidates[Index].Score;
         if (Type == ENWWeaponType::Staff)
         {
             const FBoxSphereBounds B = Mesh->GetBounds();
@@ -457,13 +481,9 @@ UStaticMesh* ANWPlayerEquipmentVisualDirector::FindWeaponMesh(ENWWeaponType Type
             const float Longest = FMath::Max3(A, C, D);
             const float Smallest = FMath::Max(1.0f, FMath::Min3(A, C, D));
             if ((Longest / Smallest) >= 3.0f) Score += 55;
+            else Score -= 90;
         }
-
-        if (Score > BestScore)
-        {
-            BestScore = Score;
-            Best = Mesh;
-        }
+        if (Score > BestScore) { BestScore = Score; Best = Mesh; }
     }
     return Best;
 }
@@ -617,7 +637,7 @@ USkeletalMeshComponent* ANWPlayerEquipmentVisualDirector::EnsureArmorComponent(
         if (Existing->IsValid()) { return Existing->Get(); }
     }
 
-    const FName Name(*FString::Printf(TEXT("NWV8_ArmorSkeletal_%d"), static_cast<int32>(Slot)));
+    const FName Name(*FString::Printf(TEXT("NWV10_ArmorSkeletal_%d"), static_cast<int32>(Slot)));
     USkeletalMeshComponent* Component = NewObject<USkeletalMeshComponent>(Character,
         MakeUniqueObjectName(Character, USkeletalMeshComponent::StaticClass(), Name), RF_Transient);
     if (!Component) { return nullptr; }
@@ -644,7 +664,7 @@ UStaticMeshComponent* ANWPlayerEquipmentVisualDirector::EnsureStaticArmorCompone
         if (Existing->IsValid()) { return Existing->Get(); }
     }
 
-    const FName Name(*FString::Printf(TEXT("NWV8_ArmorStatic_%d"), static_cast<int32>(Slot)));
+    const FName Name(*FString::Printf(TEXT("NWV10_ArmorStatic_%d"), static_cast<int32>(Slot)));
     UStaticMeshComponent* Component = NewObject<UStaticMeshComponent>(Character,
         MakeUniqueObjectName(Character, UStaticMeshComponent::StaticClass(), Name), RF_Transient);
     if (!Component) { return nullptr; }
@@ -715,6 +735,14 @@ FTransform ANWPlayerEquipmentVisualDirector::GetWeaponRelativeTransform(ENWWeapo
 {
     if (!Mesh) { return FTransform::Identity; }
 
+    const FString MeshPath = Mesh->GetPathName().ToLower();
+    if (Type == ENWWeaponType::Staff && MeshPath.Contains(TEXT("/engine/basicshapes/cylinder")))
+    {
+        // Deterministic emergency staff: narrow cylinder about 190 cm long.
+        // Pitch aligns its long Z axis closer to the weapon/hand axis on UE/Paragon rigs.
+        return FTransform(FRotator(0.0f, 90.0f, 0.0f), FVector(-44.0f, 0.0f, 0.0f), FVector(0.11f, 0.11f, 1.90f));
+    }
+
     const float Scale = ComputeStaticScale(Mesh, WeaponTargetDimension(Type, bRight));
     const FBoxSphereBounds B = Mesh->GetBounds();
     int32 LongAxis = 0;
@@ -723,8 +751,6 @@ FTransform ANWPlayerEquipmentVisualDirector::GetWeaponRelativeTransform(ENWWeapo
     FVector Location = FVector::ZeroVector;
     FRotator Rotation = FRotator::ZeroRotator;
 
-    // Se o artista colocou o pivot proximo ao centro, deslocamos a arma para o
-    // punho ficar proximo de uma extremidade. Se o pivot ja esta no cabo, preserva.
     const float OriginAxis = LongAxis == 0 ? static_cast<float>(B.Origin.X)
         : (LongAxis == 1 ? static_cast<float>(B.Origin.Y) : static_cast<float>(B.Origin.Z));
     const bool bCenteredPivot = Extent > 1.0f && FMath::Abs(OriginAxis) <= Extent * 0.28f;
@@ -738,8 +764,6 @@ FTransform ANWPlayerEquipmentVisualDirector::GetWeaponRelativeTransform(ENWWeapo
         else Location.Z = Shift;
     }
 
-    // Hand sockets de rigs UE/Paragon ja carregam orientacao; evitamos rotacoes
-    // absolutas agressivas. Apenas espelhamos levemente a segunda adaga/espada.
     if (!bRight && (Type == ENWWeaponType::Daggers || Type == ENWWeaponType::DualSwords))
     {
         Rotation.Roll = 180.0f;
