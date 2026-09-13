@@ -17,6 +17,7 @@ class NEWORLD2_API UNWCombatHUDWidget : public UUserWidget
 public:
     void SetObservedCharacter(ANWCharacter* Character);
     void ToggleInventory();
+    bool IsInventoryVisible() const { return bInventoryVisible; }
 
 protected:
     virtual void NativeConstruct() override;
