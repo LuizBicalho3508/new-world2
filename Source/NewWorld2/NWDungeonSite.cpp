@@ -90,27 +90,34 @@ void ANWDungeonSite::BuildDungeonGeometry()
     PrimaryStructures->ClearInstances();
     SecondaryStructures->ClearInstances();
 
-    if (DungeonType == ENWDungeonType::DarkCastle)
+    if (bUseInstalledDungeonMeshes)
     {
-        if (UStaticMesh* CastleMesh = FindInstalledMesh({ TEXT("Gothic"), TEXT("Castle"), TEXT("Fortress"), TEXT("Wall"), TEXT("Arch") }))
+        if (DungeonType == ENWDungeonType::DarkCastle)
         {
-            PrimaryStructures->SetStaticMesh(CastleMesh);
+            if (UStaticMesh* CastleMesh = FindInstalledMesh({ TEXT("Gothic"), TEXT("Castle"), TEXT("Fortress"), TEXT("Wall"), TEXT("Arch") }))
+            {
+                PrimaryStructures->SetStaticMesh(CastleMesh);
+            }
+            if (UStaticMesh* PropMesh = FindInstalledMesh({ TEXT("Pillar"), TEXT("Statue"), TEXT("Gargoyle"), TEXT("Ruins"), TEXT("Gate") }))
+            {
+                SecondaryStructures->SetStaticMesh(PropMesh);
+            }
         }
-        if (UStaticMesh* PropMesh = FindInstalledMesh({ TEXT("Pillar"), TEXT("Statue"), TEXT("Gargoyle"), TEXT("Ruins"), TEXT("Gate") }))
+        else
         {
-            SecondaryStructures->SetStaticMesh(PropMesh);
+            if (UStaticMesh* CaveMesh = FindInstalledMesh({ TEXT("Cave"), TEXT("Rock"), TEXT("Boulder"), TEXT("Cliff") }))
+            {
+                PrimaryStructures->SetStaticMesh(CaveMesh);
+            }
+            if (UStaticMesh* CrystalMesh = FindInstalledMesh({ TEXT("Crystal"), TEXT("Stalag"), TEXT("Mushroom"), TEXT("CavePlant") }))
+            {
+                SecondaryStructures->SetStaticMesh(CrystalMesh);
+            }
         }
     }
     else
     {
-        if (UStaticMesh* CaveMesh = FindInstalledMesh({ TEXT("Cave"), TEXT("Rock"), TEXT("Boulder"), TEXT("Cliff") }))
-        {
-            PrimaryStructures->SetStaticMesh(CaveMesh);
-        }
-        if (UStaticMesh* CrystalMesh = FindInstalledMesh({ TEXT("Crystal"), TEXT("Stalag"), TEXT("Mushroom"), TEXT("CavePlant") }))
-        {
-            SecondaryStructures->SetStaticMesh(CrystalMesh);
-        }
+        UE_LOG(LogTemp, Display, TEXT("[DUNGEON-VISUAL] modo seguro: geometria usa primitives autorados para escala previsivel."));
     }
 
     FRandomStream Random(DungeonSeed);
@@ -228,6 +235,11 @@ void ANWDungeonSite::SpawnDungeonPopulation()
 
 UStaticMesh* ANWDungeonSite::FindInstalledMesh(const TArray<FString>& Keywords) const
 {
+    if (!bUseInstalledDungeonMeshes)
+    {
+        return nullptr;
+    }
+
     IAssetRegistry& Registry = FModuleManager::LoadModuleChecked<FAssetRegistryModule>(TEXT("AssetRegistry")).Get();
     FARFilter Filter;
     Filter.PackagePaths.Add(FName(TEXT("/Game")));
