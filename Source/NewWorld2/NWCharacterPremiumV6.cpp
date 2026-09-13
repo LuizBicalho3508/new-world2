@@ -1,6 +1,7 @@
 #include "NWCharacter.h"
 
 #include "Animation/AnimInstance.h"
+#include "Components/SkeletalMeshComponent.h"
 #include "GameFramework/CharacterMovementComponent.h"
 #include "GameFramework/PlayerController.h"
 #include "InputCoreTypes.h"
@@ -54,17 +55,20 @@ namespace
     {
         return Item ? NWCombat::GetItemScore(*Item) : 0.0f;
     }
+
+    bool IsV6Starter(const FNWGeneratedItem& Item)
+    {
+        return Item.ItemSeed >= 6101 && Item.ItemSeed <= 6113;
+    }
 }
 
 void ANWCharacter::ConfigurePremiumV6StarterLoadout()
 {
     if (!HasAuthority()) { return; }
 
-    constexpr int32 V6MarkerSeed = 6199;
-    const bool bAlreadyConfigured = InventoryItems.ContainsByPredicate([](const FNWGeneratedItem& Item)
-    {
-        return Item.ItemSeed == V6MarkerSeed;
-    });
+    const bool bAlreadyConfigured = InventoryItems.ContainsByPredicate(IsV6Starter)
+        || EquippedItems.ContainsByPredicate(IsV6Starter)
+        || EquippedWeaponItems.ContainsByPredicate(IsV6Starter);
     if (bAlreadyConfigured) { return; }
 
     // O fluxo legado equipa prototipos no BeginPlay. Na V6 eles viram itens de
@@ -79,7 +83,6 @@ void ANWCharacter::ConfigurePremiumV6StarterLoadout()
         return Item.ItemSeed >= 2001 && Item.ItemSeed <= 2002;
     });
 
-    // Remove uma eventual configuracao V6 parcial de uma hot-reload anterior.
     InventoryItems.RemoveAll([](const FNWGeneratedItem& Item)
     {
         return Item.ItemSeed >= 6100 && Item.ItemSeed <= 6199;
@@ -111,19 +114,11 @@ void ANWCharacter::ConfigurePremiumV6StarterLoadout()
         TEXT("Adagas Presa Noturna"), TEXT("Nightfang"),
         { { ENWAffixType::Precision, 1.8f }, { ENWAffixType::PoisonCoating, 1.4f } }));
 
-    // Marcador invisivel ao usuario: consumivel sem efeito, mantido no fim da bag.
-    FNWGeneratedItem Marker;
-    Marker.ItemSeed = V6MarkerSeed;
-    Marker.Name = TEXT("Kit inicial V6");
-    Marker.Kind = ENWItemKind::Consumable;
-    Marker.ConsumableType = ENWConsumableType::None;
-    Marker.Rarity = ENWItemRarity::Common;
-    InventoryItems.Add(Marker);
-
     SortInventory();
     RecalculateEquipmentStats();
     Health = MaxHealth;
     Stamina = MaxStamina;
+    SelectedInventoryIndex = 0;
     ForceNetUpdate();
 
     UE_LOG(LogTemp, Warning, TEXT("[STARTER-V6] personagem base sem overlays | 5 armaduras + 3 armas iniciais na bag para equipar."));
@@ -219,8 +214,6 @@ void ANWCharacter::PremiumV6StabilizeLocomotion()
     UCharacterMovementComponent* Movement = GetCharacterMovement();
     if (!PC || !Movement || PC->IsMoveInputIgnored()) { return; }
 
-    // Montages de packs Fab/Paragon podem trazer root-motion inesperado. Em um
-    // action-RPG camera-relative, o teclado deve continuar soberano durante casts.
     if (USkeletalMeshComponent* Mesh = GetMesh())
     {
         if (UAnimInstance* AnimInstance = Mesh->GetAnimInstance())
